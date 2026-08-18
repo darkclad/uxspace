@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- The ADB identity is device-specific and must not leave this device. -->
+        <exclude domain="file" path="adb/" />
+    </cloud-backup>
+    <device-transfer>
+        <!-- Restored installations must establish a fresh Wireless Debugging pairing. -->
+        <exclude domain="file" path="adb/" />
+    </device-transfer>
+</data-extraction-rules>
