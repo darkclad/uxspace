@@ -1147,19 +1147,33 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
         fun main(args: Array<String>) {
             try {
                 Log.i(TAG, "PrivilegedServer.main entered, pid=${android.os.Process.myPid()}")
+                val launchToken = readLaunchToken()
                 killOrphanPrivilegedServers()
                 Log.i(TAG, "orphan sweep returned; preparing Looper")
                 Looper.prepareMainLooper()
                 val systemContext = obtainSystemContext()
                     ?: throw IllegalStateException("could not obtain a system context")
                 val server = PrivilegedServer().also { it.setContext(systemContext) }
-                sendBinderToApp(server)
+                sendBinderToApp(server, launchToken)
+                launchToken.fill(0)
                 Log.i(TAG, "PrivilegedServer ready; entering main loop")
                 Looper.loop()
             } catch (t: Throwable) {
                 Log.e(TAG, "PrivilegedServer crashed during start-up", t)
                 exitProcess(1)
             }
+        }
+
+        /** Read the fixed-size authenticator from the ADB shell stream without logging it. */
+        private fun readLaunchToken(): ByteArray {
+            val token = ByteArray(PrivilegedLaunchToken.BYTE_COUNT)
+            var offset = 0
+            while (offset < token.size) {
+                val count = System.`in`.read(token, offset, token.size - offset)
+                if (count <= 0) throw IllegalStateException("launch token was not delivered")
+                offset += count
+            }
+            return token
         }
 
         /**
@@ -1237,10 +1251,13 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
          * `IContentProvider.call` directly. Both are accessed reflectively because they
          * are not in the public SDK.
          */
-        private fun sendBinderToApp(binder: IBinder) {
+        private fun sendBinderToApp(binder: IBinder, launchToken: ByteArray) {
             val authority = BinderReceiverProvider.AUTHORITY
             val token = Binder()
-            val extras = Bundle().apply { putBinder(BinderReceiverProvider.EXTRA_BINDER, binder) }
+            val extras = Bundle().apply {
+                putBinder(BinderReceiverProvider.EXTRA_BINDER, binder)
+                putByteArray(BinderReceiverProvider.EXTRA_LAUNCH_TOKEN, launchToken)
+            }
             val activityManager = activityManagerService()
                 ?: throw IllegalStateException("no IActivityManager binder")
             val iAmClass = Class.forName("android.app.IActivityManager")

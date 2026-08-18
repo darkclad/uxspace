@@ -33,12 +33,13 @@ class BinderReceiverProvider : ContentProvider() {
             return null
         }
         val binder = extras?.getBinder(EXTRA_BINDER)
-        if (binder == null) {
-            Log.w(TAG, "setBinder called with no binder")
+        val launchToken = extras?.getByteArray(EXTRA_LAUNCH_TOKEN)
+        if (binder == null || launchToken == null) {
+            Log.w(TAG, "setBinder called without binder or launch token")
             return null
         }
         Log.i(TAG, "received privileged binder from uid $callingUid")
-        PrivilegedService.onPrivilegedBinder(binder)
+        PrivilegedService.onPrivilegedBinder(binder, launchToken)
         return null
     }
 
@@ -71,6 +72,9 @@ class BinderReceiverProvider : ContentProvider() {
 
         /** Bundle key under which the Binder travels. */
         const val EXTRA_BINDER = "binder"
+
+        /** Bundle key for the one-use token delivered to the helper over its ADB stdin. */
+        const val EXTRA_LAUNCH_TOKEN = "launchToken"
 
         private const val TAG = "UxSpace/Privileged"
     }

@@ -81,6 +81,8 @@ object PrivilegedService {
     @Volatile
     private var adbStream: AdbStream? = null
 
+    private val launchToken = PrivilegedLaunchToken()
+
     private var appContext: Context? = null
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "uxspace-privileged") }
@@ -226,9 +228,15 @@ object PrivilegedService {
                 }
             }
 
+            val token = launchToken.issue()
             setState(State.STARTING)
-            val stream = ServerBootstrap.start(ctx, adb)
+            val stream = try {
+                ServerBootstrap.start(ctx, adb, token)
+            } finally {
+                token.fill(0)
+            }
             if (stream == null) {
+                launchToken.clear()
                 Log.w(TAG, "could not start PrivilegedServer over ADB")
                 setState(State.NEEDS_WIRELESS_DEBUGGING)
                 return@execute
@@ -273,12 +281,16 @@ object PrivilegedService {
 
     /**
      * Called by [BinderReceiverProvider] when [PrivilegedServer] hands its Binder back. The
-     * provider gates this on the calling uid (shell or self), so this is reachable only
-     * from the server we started.
+     * The provider gates this on the calling uid (shell or self); the one-use launch token
+     * additionally proves that this is the helper started by the current ADB bootstrap.
      */
-    fun onPrivilegedBinder(binder: IBinder) {
+    fun onPrivilegedBinder(binder: IBinder, token: ByteArray) {
         if (!binder.pingBinder()) {
             Log.w(TAG, "onPrivilegedBinder: ping failed")
+            return
+        }
+        if (!launchToken.consume(token, state == State.STARTING)) {
+            Log.w(TAG, "onPrivilegedBinder: rejected unexpected or unauthenticated publication")
             return
         }
         // Displace any previously-bound server. Without this, the spawn-race window
