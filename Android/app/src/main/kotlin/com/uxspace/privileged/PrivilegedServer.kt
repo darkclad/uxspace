@@ -15,6 +15,7 @@ import android.os.RemoteException
 import android.os.SystemClock
 import android.util.Log
 import android.view.InputDevice
+import android.view.InputEvent
 import android.view.MotionEvent
 import android.view.Surface
 import java.io.File
@@ -285,9 +286,9 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
      * (DOWN, POINTER_DOWN, MOVEs, POINTER_UP, UP) and submits it through `InputManager`
      * directly — `input` only does a single pointer.
      *
-     * Reflective access to `InputManager.getInstance()` and `injectInputEvent(...)` —
-     * both are hidden but accessible from the shell uid this process runs as
-     * (shell has `INJECT_EVENTS`).
+     * Reflective access to the runtime-selected InputManager backend and
+     * `injectInputEvent(...)` — the APIs are hidden but accessible from the shell uid this
+     * process runs as (shell has `INJECT_EVENTS`).
      */
     override fun pinchOnDisplay(
         displayId: Int,
@@ -502,14 +503,14 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
                 event.javaClass.getMethod("setDisplayId", Int::class.javaPrimitiveType)
                     .invoke(event, displayId)
             }
-            val injectMethod = injector.javaClass.getMethod(
-                "injectInputEvent",
-                android.view.InputEvent::class.java,
-                Int::class.javaPrimitiveType,
-            )
             // 0 = INJECT_INPUT_EVENT_MODE_ASYNC.
-            injectMethod.invoke(injector, event, 0)
-            event.recycle()
+            try {
+                if (!injector.inject(event, INJECT_INPUT_EVENT_MODE_ASYNC)) {
+                    Log.w(TAG, "scroll inject FAILED display=$displayId at ($x,$y)")
+                }
+            } finally {
+                event.recycle()
+            }
         } catch (t: Throwable) {
             Log.e(TAG, "scroll failed", t)
         }
@@ -518,7 +519,7 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
     /** Build and submit one frame of the pinch — one or two pointers. Returns the
      *  injectInputEvent boolean — true means the event was accepted by the dispatcher. */
     private fun injectMotionEvent(
-        injector: Any,
+        injector: InputEventInjector,
         displayId: Int,
         downAt: Long,
         eventAt: Long,
@@ -561,24 +562,97 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
         if (!setOk || actualDisplayId != displayId) {
             Log.w(TAG, "displayId mismatch: setOk=$setOk wanted=$displayId got=$actualDisplayId")
         }
-        val injectMethod = injector.javaClass.getMethod(
-            "injectInputEvent",
-            android.view.InputEvent::class.java,
-            Int::class.javaPrimitiveType,
-        )
         // 0 = INJECT_INPUT_EVENT_MODE_ASYNC. Returns Boolean — false means the
         // dispatcher rejected the event (permission, no window, wrong display, …).
-        val result = injectMethod.invoke(injector, event, 0)
-        event.recycle()
-        return (result as? Boolean) ?: false
+        return try {
+            injector.inject(event, INJECT_INPUT_EVENT_MODE_ASYNC)
+        } finally {
+            event.recycle()
+        }
     }
 
-    /** `InputManager.getInstance()` or, on newer Android, an equivalent service-hosted singleton. */
-    private fun obtainInjector(): Any? {
-        return runCatching {
-            val cls = Class.forName("android.hardware.input.InputManager")
-            cls.getMethod("getInstance").invoke(null)
-        }.onFailure { Log.w(TAG, "InputManager.getInstance() failed: ${it.message}") }.getOrNull()
+    /** Receiver + method for one platform implementation of hidden input injection. */
+    private class InputEventInjector(
+        val backendName: String,
+        private val receiver: Any,
+        private val method: java.lang.reflect.Method,
+    ) {
+        fun inject(event: InputEvent, mode: Int): Boolean =
+            (method.invoke(receiver, event, mode) as? Boolean) == true
+    }
+
+    @Volatile
+    private var cachedInjector: InputEventInjector? = null
+
+    @Volatile
+    private var injectorResolutionAttempted = false
+
+    /**
+     * Resolve input injection across Android/OEM implementations, once per helper process.
+     *
+     * Samsung's tested firmware supports the legacy InputManager singleton, so it remains the
+     * first choice. Newer Pixel Android builds removed that static method and expose the same
+     * operation through InputManagerGlobal. A Context-provided InputManager is the final bridge
+     * for releases which have neither static singleton shape. Capability probing avoids brittle
+     * manufacturer checks and preserves the already-working Samsung path unchanged.
+     */
+    private fun obtainInjector(): InputEventInjector? {
+        cachedInjector?.let { return it }
+        synchronized(this) {
+            cachedInjector?.let { return it }
+            if (injectorResolutionAttempted) return null
+            injectorResolutionAttempted = true
+
+            val resolution = resolveCapability(
+                listOf(
+                    CapabilityCandidate("InputManager.getInstance") {
+                        val cls = Class.forName("android.hardware.input.InputManager")
+                        buildInjector(
+                            "InputManager.getInstance",
+                            cls.getMethod("getInstance").invoke(null),
+                        )
+                    },
+                    CapabilityCandidate("InputManagerGlobal.getInstance") {
+                        val cls = Class.forName("android.hardware.input.InputManagerGlobal")
+                        buildInjector(
+                            "InputManagerGlobal.getInstance",
+                            cls.getMethod("getInstance").invoke(null),
+                        )
+                    },
+                    CapabilityCandidate("Context.getSystemService(input)") {
+                        val receiver = baseContext()?.getSystemService(Context.INPUT_SERVICE)
+                            ?: error("input service unavailable")
+                        buildInjector("Context.getSystemService(input)", receiver)
+                    },
+                ),
+            )
+            val injector = resolution.value
+            if (injector == null) {
+                Log.e(
+                    TAG,
+                    "no input injection backend on ${Build.MANUFACTURER} ${Build.MODEL} " +
+                        "API ${Build.VERSION.SDK_INT}; attempted: ${resolution.failures.joinToString()}",
+                )
+                return null
+            }
+            cachedInjector = injector
+            Log.i(
+                TAG,
+                "input injection backend=${injector.backendName} on " +
+                    "${Build.MANUFACTURER} ${Build.MODEL} API ${Build.VERSION.SDK_INT}",
+            )
+            return injector
+        }
+    }
+
+    private fun buildInjector(backendName: String, receiver: Any?): InputEventInjector {
+        requireNotNull(receiver) { "$backendName returned null" }
+        val method = receiver.javaClass.getMethod(
+            "injectInputEvent",
+            InputEvent::class.java,
+            Int::class.javaPrimitiveType,
+        )
+        return InputEventInjector(backendName, receiver, method)
     }
 
     /**
@@ -1416,6 +1490,9 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
         /** Frame spacing for the pinch interpolation in [pinchOnDisplay]. */
         private const val PINCH_STEP_MS = 16
 
+        /** InputManager.INJECT_INPUT_EVENT_MODE_ASYNC (hidden SDK constant on some releases). */
+        private const val INJECT_INPUT_EVENT_MODE_ASYNC = 0
+
         /** Package owning the shell uid — the virtual display is created under it. */
         private const val SHELL_PACKAGE = "com.android.shell"
 
@@ -1452,19 +1529,33 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
         fun main(args: Array<String>) {
             try {
                 Log.i(TAG, "PrivilegedServer.main entered, pid=${android.os.Process.myPid()}")
+                val launchToken = readLaunchToken()
                 killOrphanPrivilegedServers()
                 Log.i(TAG, "orphan sweep returned; preparing Looper")
                 Looper.prepareMainLooper()
                 val systemContext = obtainSystemContext()
                     ?: throw IllegalStateException("could not obtain a system context")
                 val server = PrivilegedServer().also { it.setContext(systemContext) }
-                sendBinderToApp(server)
+                sendBinderToApp(server, launchToken)
+                launchToken.fill(0)
                 Log.i(TAG, "PrivilegedServer ready; entering main loop")
                 Looper.loop()
             } catch (t: Throwable) {
                 Log.e(TAG, "PrivilegedServer crashed during start-up", t)
                 exitProcess(1)
             }
+        }
+
+        /** Read the fixed-size authenticator from the ADB shell stream without logging it. */
+        private fun readLaunchToken(): ByteArray {
+            val token = ByteArray(PrivilegedLaunchToken.BYTE_COUNT)
+            var offset = 0
+            while (offset < token.size) {
+                val count = System.`in`.read(token, offset, token.size - offset)
+                if (count <= 0) throw IllegalStateException("launch token was not delivered")
+                offset += count
+            }
+            return token
         }
 
         /**
@@ -1542,10 +1633,13 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
          * `IContentProvider.call` directly. Both are accessed reflectively because they
          * are not in the public SDK.
          */
-        private fun sendBinderToApp(binder: IBinder) {
+        private fun sendBinderToApp(binder: IBinder, launchToken: ByteArray) {
             val authority = BinderReceiverProvider.AUTHORITY
             val token = Binder()
-            val extras = Bundle().apply { putBinder(BinderReceiverProvider.EXTRA_BINDER, binder) }
+            val extras = Bundle().apply {
+                putBinder(BinderReceiverProvider.EXTRA_BINDER, binder)
+                putByteArray(BinderReceiverProvider.EXTRA_LAUNCH_TOKEN, launchToken)
+            }
             val activityManager = activityManagerService()
                 ?: throw IllegalStateException("no IActivityManager binder")
             val iAmClass = Class.forName("android.app.IActivityManager")

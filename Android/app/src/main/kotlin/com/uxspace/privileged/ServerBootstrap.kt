@@ -25,7 +25,12 @@ object ServerBootstrap {
      * Launch [PrivilegedServer] over [adb]. Returns the live shell stream (keep it open) or
      * `null` if the APK path could not be resolved or the stream could not be opened.
      */
-    fun start(context: Context, adb: AdbConnectionManager): AdbStream? {
+    fun start(
+        context: Context,
+        adb: AdbConnectionManager,
+        launchToken: ByteArray,
+    ): AdbStream? {
+        require(launchToken.size == PrivilegedLaunchToken.BYTE_COUNT)
         val apk = context.applicationInfo.sourceDir
         if (apk.isNullOrEmpty()) {
             Log.e(TAG, "no APK path on applicationInfo — cannot start server")
@@ -37,8 +42,23 @@ object ServerBootstrap {
         // `main(String[])` becomes the entry point.
         val command = "CLASSPATH=$apk app_process /system/bin --nice-name=$SERVER_NAME $SERVER_CLASS"
         Log.i(TAG, "starting privileged server: $command")
-        return runCatching { adb.openStream("shell:$command") }
+        val stream = runCatching { adb.openStream("shell:$command") }
             .onFailure { Log.e(TAG, "openStream failed", it) }
             .getOrNull()
+            ?: return null
+
+        // Deliver the launch authenticator over the shell's stdin so it is never exposed in
+        // the helper's command line, environment, or logs.
+        val delivered = runCatching {
+            stream.openOutputStream().apply {
+                write(launchToken)
+                flush()
+            }
+        }.onFailure { Log.e(TAG, "launch-token delivery failed", it) }.isSuccess
+        if (!delivered) {
+            runCatching { stream.close() }
+            return null
+        }
+        return stream
     }
 }

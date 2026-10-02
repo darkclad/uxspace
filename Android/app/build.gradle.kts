@@ -73,4 +73,6 @@ dependencies {
     implementation(libs.libadb.android)
     implementation(libs.conscrypt.android)
     implementation(libs.sun.security.android)
+
+    testImplementation(libs.junit)
 }

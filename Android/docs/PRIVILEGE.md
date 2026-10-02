@@ -97,15 +97,15 @@ libadb-android's connection manager, subclassed to persist the ADB identity:
 
 Runs under `app_process` as shell uid. It:
 
-1. `Looper.prepareMainLooper()`.
-2. Builds a system `Context` (`ActivityThread.systemMain().getSystemContext()`).
-3. Creates the `IPrivilegedService.Stub` (the body that is `ShizukuUserService` today —
+1. Reads a one-use 256-bit launch token from the ADB shell stream's stdin.
+2. `Looper.prepareMainLooper()`.
+3. Builds a system `Context` (`ActivityThread.systemMain().getSystemContext()`).
+4. Creates the `IPrivilegedService.Stub` (the body that is `ShizukuUserService` today —
    `am` / `input` shell-outs and trusted `createVirtualDisplay`).
-4. Hands the Binder to the app: `context.getContentResolver().call(authorityUri,
-   "setBinder", null, Bundle{ putBinder("binder", stub) })`.
-5. `Looper.loop()` — stays alive until `destroy()`.
+5. Hands the Binder and launch token to the app through `BinderReceiverProvider`.
+6. `Looper.loop()` — stays alive until `destroy()`.
 
-It is started detached so it survives the ADB shell stream closing.
+The ADB shell stream remains open as the helper's lifetime anchor.
 
 ### `ServerBootstrap`
 
@@ -116,16 +116,21 @@ CLASSPATH=<uxspace-apk-path> app_process /system/bin \
     --nice-name=uxspace_privileged com.uxspace.privileged.PrivilegedServer
 ```
 
-The APK path comes from `context.applicationInfo.sourceDir`. The command is detached
-(`nohup … &` / `setsid`) so it outlives the shell stream. If a helper is already running,
-`PrivilegedServer` exits early (single-instance guard).
+The APK path comes from `context.applicationInfo.sourceDir`. The command remains attached
+to the ADB stream, which the app retains as the helper's lifeline; closing it tears the
+helper down.
+
+Immediately after opening the stream, the app writes the launch token to its stdin. The
+token is deliberately absent from the command line, environment, and logs. The stream is
+then retained for the helper's lifetime as before.
 
 ### `BinderReceiverProvider` — `: ContentProvider`
 
 A tiny exported provider, authority `com.uxspace.privileged`. Its `call("setBinder", …)`
 pulls the Binder out of the Bundle and passes it to `PrivilegedService`. This is how the
 shell-uid server reaches back into the app process (Binders travel in Bundles across the
-process boundary; Shizuku uses the same trick).
+process boundary; Shizuku uses the same trick). Publication is accepted only while the
+orchestrator is `STARTING` and the one-use launch token matches.
 
 ### `PrivilegedService` — orchestrator (replaces `ShizukuManager`)
 
