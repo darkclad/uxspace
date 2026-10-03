@@ -38,6 +38,14 @@ jobs:
       # Caches Gradle and validates the wrapper JAR checksum.
       - uses: gradle/actions/setup-gradle@v4
 
+      # :glasses pins an NDK and CMake that the runner image doesn't ship; AGP resolves
+      # them at configuration time even when no native task runs.
+      - name: Install NDK and CMake
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null
+          "$SDKMANAGER" --install "ndk;30.0.14904198" "cmake;4.1.2" > /dev/null
+
       # The VITURE SDK (glasses/src/main/jniLibs, cpp/include) is not in the repo, so CI
       # runs JVM unit tests only — no native build, no APK.
       - name: Run unit tests
