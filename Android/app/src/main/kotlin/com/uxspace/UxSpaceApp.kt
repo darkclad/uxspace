@@ -217,8 +217,10 @@ class UxSpaceApp : Application() {
         // reset_origin action. Ctrl+Alt+C goes through alignVerticalToHead() (the
         // app-side anchor, same path the visual-space toolbar's recenter uses).
         WorkspaceController.sdkRecenter = {
-            val rc = NativeGlasses.resetOriginCarina()
-            Log.i(HOTKEY_TAG, "Ctrl+Alt+R: resetOriginCarina rc=$rc")
+            // runCatching: a build without the VITURE SDK (simulator) has no native bridge,
+            // and touching NativeGlasses there throws UnsatisfiedLinkError.
+            val rc = runCatching { NativeGlasses.resetOriginCarina() }
+            Log.i(HOTKEY_TAG, "Ctrl+Alt+R: resetOriginCarina rc=${rc.getOrNull() ?: rc.exceptionOrNull()}")
         }
 
         // Raw evdev mouse deltas — bypass the Android system cursor's screen-edge

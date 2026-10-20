@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+          Debug-only simulator control channel (docs/SIMULATOR.md): a loopback socket the PC
+          reaches over `adb forward` to fake head pose and drive the workspace without glasses.
+          A provider so it starts with the process and needs no hook in the main source set.
+        -->
+        <provider
+            android:name=".sim.SimulatorBridge"
+            android:authorities="${applicationId}.simulator"
+            android:exported="false" />
+    </application>
+</manifest>

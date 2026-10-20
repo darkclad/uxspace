@@ -1230,6 +1230,15 @@ object WorkspaceController {
     fun addRecordingListener(l: (recording: Boolean) -> Unit) { recordingListeners.add(l) }
     fun removeRecordingListener(l: (recording: Boolean) -> Unit) { recordingListeners.remove(l) }
 
+    /**
+     * Feed a head orientation (w, x, y, z) straight to the renderer, bypassing
+     * [com.uxspace.glasses.HeadTracking]. Used by the debug-build simulator to drive the
+     * camera from the PC when no glasses are attached. Safe to call from any thread.
+     */
+    fun injectHeadPose(w: Float, x: Float, y: Float, z: Float) {
+        renderer?.setHeadPose(w, x, y, z)
+    }
+
     /** Move the workspace cursor by a fraction of the touchpad's width. */
     fun moveCursor(dxFraction: Float, dyFraction: Float) {
         renderer?.moveCursor(dxFraction, dyFraction)

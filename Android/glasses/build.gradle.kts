@@ -3,6 +3,16 @@ plugins {
     alias(libs.plugins.android.library)
 }
 
+// The proprietary VITURE SDK (libglasses.so + headers) is gitignored, so a fresh clone has
+// none of it. Without it the JNI bridge is skipped: the module still compiles, HeadTracking
+// simply finds no glasses, and NativeGlasses is never loaded. `-PuxspaceNoViture` forces the
+// SDK-less build even when the SDK is present — the simulator build (docs/SIMULATOR.md) uses
+// it so the APK carries no arm64-only libs and installs on an x86_64 emulator as-is.
+val vitureSdkPresent =
+    file("src/main/jniLibs/arm64-v8a/libglasses.so").exists() &&
+        file("src/main/cpp/include").isDirectory
+val buildVitureBridge = vitureSdkPresent && !project.hasProperty("uxspaceNoViture")
+
 android {
     namespace = "com.uxspace.glasses"
     compileSdk = 36
@@ -12,12 +22,14 @@ android {
         minSdk = 26
 
         // The VITURE SDK ships arm64 binaries; this phone is arm64.
-        ndk {
-            abiFilters += "arm64-v8a"
-        }
-        externalNativeBuild {
-            cmake {
-                cppFlags += "-std=c++17"
+        if (buildVitureBridge) {
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
+            externalNativeBuild {
+                cmake {
+                    cppFlags += "-std=c++17"
+                }
             }
         }
     }
@@ -28,11 +40,16 @@ android {
     }
 
     // Builds libglasses_bridge.so — the JNI bridge to the native VITURE SDK.
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "4.1.2"
+    if (buildVitureBridge) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+                version = "4.1.2"
+            }
         }
+    } else {
+        // Keep the SDK's prebuilt .so files out of the APK too.
+        sourceSets["main"].jniLibs.setSrcDirs(emptyList<String>())
     }
 }
 
