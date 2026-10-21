@@ -339,6 +339,25 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
         }
     }
 
+    override fun grantNotificationListener() {
+        run("cmd", "notification", "allow_listener", NOTIFICATION_LISTENER)
+    }
+
+    override fun setQuickSetting(name: String, value: Int) {
+        val on = value != 0
+        when (name) {
+            "wifi" -> run("svc", "wifi", if (on) "enable" else "disable")
+            "bluetooth" -> run("svc", "bluetooth", if (on) "enable" else "disable")
+            "airplane" -> run("cmd", "connectivity", "airplane-mode", if (on) "enable" else "disable")
+            "dnd" -> run("cmd", "notification", "set_dnd", if (on) "priority" else "off")
+            "brightness" -> {
+                run("settings", "put", "system", "screen_brightness_mode", "0")
+                run("settings", "put", "system", "screen_brightness", value.coerceIn(1, 255).toString())
+            }
+            else -> Log.w(TAG, "setQuickSetting: '$name' is not a quick setting")
+        }
+    }
+
     /** Simulator: hand the grabbed mouse to Android (HotkeyMonitor.setPointerPassthrough). */
     override fun releasePointers() {
         hotkeyMonitor?.setPointerPassthrough(true)
@@ -1530,6 +1549,10 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
 
     companion object {
         private const val TAG = "UxSpace/Privileged"
+
+        /** The app's notification listener — the only component [grantNotificationListener] grants. */
+        private const val NOTIFICATION_LISTENER =
+            "com.uxspace/com.uxspace.system.UxNotificationListener"
 
         // FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_MULTIPLE_TASK. The third bit we want
         // (FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS, 0x00800000) is no longer ORed in here —

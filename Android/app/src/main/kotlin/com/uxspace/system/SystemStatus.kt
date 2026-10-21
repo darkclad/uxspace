@@ -8,18 +8,31 @@ import android.database.ContentObserver
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.app.NotificationManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.net.wifi.WifiManager
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.telephony.PhoneStateListener
+import android.telephony.SignalStrength
+import android.telephony.TelephonyCallback
+import android.telephony.TelephonyManager
+import android.util.Log
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Process-wide read-only view of the phone's status — what the workspace's status tray
  * (and, later, the quick-settings panel) renders.
  *
- * For now: battery level + charging, and music-stream volume. Wi-Fi, signal, brightness,
- * and notifications come as the panel grows; see docs/TASKBAR.md.
+ * Battery, music-stream volume and audio output; Wi-Fi and cellular signal; and the
+ * quick-settings states (Wi-Fi / Bluetooth / airplane / Do not disturb on, brightness).
+ * Notifications live in [NotificationCenter]. See docs/TASKBAR.md.
  *
  * Receivers and observers are registered once in [init] and are tied to the app process —
  * the desktop UI just adds listeners that fire on the main thread when something changes.
@@ -74,6 +87,49 @@ object SystemStatus {
     var activeOutputName: String = AudioOutput.SPEAKER.displayName
         private set
 
+    /** Wi-Fi radio on (not necessarily connected). */
+    @Volatile
+    var wifiEnabled: Boolean = false
+        private set
+
+    /** Connected to a Wi-Fi network. */
+    @Volatile
+    var wifiConnected: Boolean = false
+        private set
+
+    /** Wi-Fi signal, 0..4 bars; meaningful while [wifiConnected]. */
+    @Volatile
+    var wifiLevel: Int = 0
+        private set
+
+    /** The device has a SIM / mobile radio worth showing. */
+    @Volatile
+    var hasCellular: Boolean = false
+        private set
+
+    /** Mobile signal, 0..4 bars. */
+    @Volatile
+    var cellLevel: Int = 0
+        private set
+
+    @Volatile
+    var bluetoothOn: Boolean = false
+        private set
+
+    @Volatile
+    var airplaneOn: Boolean = false
+        private set
+
+    /** Do not disturb: any interruption filter other than "all". */
+    @Volatile
+    var dndOn: Boolean = false
+        private set
+
+    /** Screen brightness, 0..255. */
+    @Volatile
+    var brightness: Int = 128
+        private set
+
     /** Wire up the system listeners. Call once from the Application. */
     fun init(context: Context) {
         if (appContext != null) return
@@ -81,8 +137,12 @@ object SystemStatus {
         registerBatteryReceiver()
         registerVolumeObserver()
         registerAudioDeviceCallback()
+        registerToggleObservers()
+        registerWifiCallback()
+        registerCellularCallback()
         readVolume()
         readActiveOutput()
+        readToggles()
     }
 
     fun addListener(listener: Listener) = listeners.add(listener)
@@ -141,6 +201,7 @@ object SystemStatus {
             object : ContentObserver(mainHandler) {
                 override fun onChange(selfChange: Boolean) {
                     readVolume()
+                    readToggles()
                     notifyChanged()
                 }
             },
@@ -234,4 +295,115 @@ object SystemStatus {
         val name = productName.ifBlank { kind.displayName }
         return kind to name
     }
+
+    // region Quick-settings states + signal
+
+    /** Wi-Fi / Bluetooth / airplane live in Settings.Global; DND has its own broadcast. */
+    private fun registerToggleObservers() {
+        val ctx = appContext ?: return
+        ctx.contentResolver.registerContentObserver(
+            Settings.Global.CONTENT_URI,
+            true,
+            object : ContentObserver(mainHandler) {
+                override fun onChange(selfChange: Boolean) {
+                    readToggles()
+                    notifyChanged()
+                }
+            },
+        )
+        ctx.registerReceiver(
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    readToggles()
+                    notifyChanged()
+                }
+            },
+            IntentFilter(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED),
+        )
+    }
+
+    private fun readToggles() {
+        val ctx = appContext ?: return
+        val cr = ctx.contentResolver
+        wifiEnabled = Settings.Global.getInt(cr, Settings.Global.WIFI_ON, 0) != 0
+        bluetoothOn = Settings.Global.getInt(cr, Settings.Global.BLUETOOTH_ON, 0) != 0
+        airplaneOn = Settings.Global.getInt(cr, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+        brightness = Settings.System.getInt(cr, Settings.System.SCREEN_BRIGHTNESS, brightness)
+        val filter = ctx.getSystemService(NotificationManager::class.java)
+            ?.currentInterruptionFilter ?: NotificationManager.INTERRUPTION_FILTER_ALL
+        dndOn = filter != NotificationManager.INTERRUPTION_FILTER_ALL &&
+            filter != NotificationManager.INTERRUPTION_FILTER_UNKNOWN
+    }
+
+    private fun registerWifiCallback() {
+        val ctx = appContext ?: return
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .build()
+        cm.registerNetworkCallback(
+            request,
+            object : ConnectivityManager.NetworkCallback() {
+                override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                    wifiConnected = true
+                    wifiLevel = wifiBars(caps.signalStrength)
+                    notifyChanged()
+                }
+
+                override fun onLost(network: Network) {
+                    wifiConnected = false
+                    wifiLevel = 0
+                    notifyChanged()
+                }
+            },
+            mainHandler,
+        )
+    }
+
+    /** RSSI (dBm) to 0..4 bars, the same buckets the status bar uses. */
+    private fun wifiBars(rssi: Int): Int {
+        if (rssi == NetworkCapabilities.SIGNAL_STRENGTH_UNSPECIFIED) return 4
+        val wm = appContext?.getSystemService(WifiManager::class.java)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && wm != null) {
+            (wm.calculateSignalLevel(rssi) * 4 / wm.maxSignalLevel.coerceAtLeast(1)).coerceIn(0, 4)
+        } else {
+            @Suppress("DEPRECATION")
+            WifiManager.calculateSignalLevel(rssi, 5)
+        }
+    }
+
+    private fun registerCellularCallback() {
+        val ctx = appContext ?: return
+        val tm = ctx.getSystemService(TelephonyManager::class.java) ?: return
+        hasCellular = tm.phoneType != TelephonyManager.PHONE_TYPE_NONE &&
+            tm.simState == TelephonyManager.SIM_STATE_READY
+        if (!hasCellular) return
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                tm.registerTelephonyCallback(
+                    ctx.mainExecutor,
+                    object : TelephonyCallback(), TelephonyCallback.SignalStrengthsListener {
+                        override fun onSignalStrengthsChanged(strength: SignalStrength) {
+                            cellLevel = strength.level
+                            notifyChanged()
+                        }
+                    },
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                tm.listen(
+                    object : PhoneStateListener() {
+                        @Deprecated("Deprecated in Java")
+                        override fun onSignalStrengthsChanged(strength: SignalStrength?) {
+                            cellLevel = strength?.level ?: 0
+                            notifyChanged()
+                        }
+                    },
+                    PhoneStateListener.LISTEN_SIGNAL_STRENGTHS,
+                )
+            }
+        }.onFailure { Log.w("UxSpace/Status", "no signal-strength updates", it) }
+    }
+
+    // endregion
 }

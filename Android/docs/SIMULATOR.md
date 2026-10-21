@@ -144,7 +144,7 @@ python tools/simulator/uxsim.py send pose 30 -10
 | `mode free\|pinned` | View mode |
 | `recenter` | Align to head |
 | `layout` | Cycle the multi-screen layout |
-| `panel drawer\|settings\|audio\|close` | Open a desktop panel on the main screen |
+| `panel drawer\|settings\|audio\|notifications\|quick\|close` | Open a desktop panel on the main screen |
 | `move <dx> <dy>` | Cursor delta, as a fraction of the touchpad |
 | `click`, `rclick`, `scroll <dy>` | Pointer actions |
 | `pair <code>` | Pair the helper with a Wireless debugging code |

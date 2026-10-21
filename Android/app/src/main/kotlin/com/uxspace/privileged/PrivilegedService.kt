@@ -431,6 +431,12 @@ object PrivilegedService {
         }
     }
 
+    /** Grant the app's notification listener access, via the helper (no Settings trip). */
+    fun grantNotificationListener() = onWorker { service?.grantNotificationListener() }
+
+    /** Flip a quick-settings toggle through the helper; see IPrivilegedService.setQuickSetting. */
+    fun setQuickSetting(name: String, value: Int) = onWorker { service?.setQuickSetting(name, value) }
+
     /** Simulator: hand the mouse to Android's own pointer (see PrivilegedServer). */
     fun releasePointers() = onWorker { service?.releasePointers() }
 

@@ -41,6 +41,11 @@
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      The taskbar's status tray shows Wi-Fi on/off and signal strength (SystemStatus).
+    -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!--
@@ -131,6 +136,21 @@
           onDestroy force-stops every app UxSpace launched into the workspace, so a
           launched app never outlives the glasses session.
         -->
+        <!--
+          Feeds the taskbar's notification icons and notification panel
+          (system/NotificationCenter). Access is granted by the privileged helper with
+          `cmd notification allow_listener`, so there's no Settings opt-in.
+        -->
+        <service
+            android:name=".system.UxNotificationListener"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".WorkspaceService"
             android:exported="false"

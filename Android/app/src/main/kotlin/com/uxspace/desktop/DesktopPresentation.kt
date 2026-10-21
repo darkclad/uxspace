@@ -24,6 +24,7 @@ import androidx.annotation.DrawableRes
 import com.uxspace.R
 import com.uxspace.spatial.UxSpaceTheme
 import com.uxspace.spatial.WorkspaceController
+import com.uxspace.system.NotificationCenter
 import com.uxspace.system.SystemStatus
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -141,6 +142,10 @@ class DesktopPresentation(
     /** Audio popup embedded alongside the drawer / settings — same modal model. */
     private lateinit var audio: AudioPanelView
 
+    /** Tray popups (notifications, quick settings) — same modal slot as the others. */
+    private lateinit var notificationsPanel: NotificationsPanelView
+    private lateinit var quickSettingsPanel: QuickSettingsPanelView
+
     /** Pinned-app icons painted directly on the wallpaper for this screen's desktop. */
     private lateinit var shortcuts: DesktopShortcutsView
 
@@ -215,6 +220,21 @@ class DesktopPresentation(
             refreshScrim()
         }
     }
+
+    private val trayPanelListener: (WorkspaceController.TrayPanel?, Int) -> Unit = { panel, screenIdx ->
+        mainHandler.post {
+            val here = screenIdx == slotIdx
+            if (::notificationsPanel.isInitialized) {
+                notificationsPanel.visibility =
+                    if (here && panel == WorkspaceController.TrayPanel.NOTIFICATIONS) View.VISIBLE else View.GONE
+                quickSettingsPanel.visibility =
+                    if (here && panel == WorkspaceController.TrayPanel.QUICK_SETTINGS) View.VISIBLE else View.GONE
+            }
+            refreshScrim()
+        }
+    }
+
+    private val notificationsListener = NotificationCenter.Listener { refreshNotificationIcons() }
 
     /** Context menu created lazily on first right-click; rebuilt on each open
      *  so view-mode-dependent rows (Cycle layout, Recenter) reflect the latest
@@ -409,6 +429,7 @@ class DesktopPresentation(
             WorkspaceController.isDrawerOpen ||
                 WorkspaceController.isSettingsOpen ||
                 WorkspaceController.isAudioOpen ||
+                WorkspaceController.trayPanel != null ||
                 WorkspaceController.isContextMenuOpen
         scrim.visibility = if (anyOpen) View.VISIBLE else View.GONE
     }
@@ -468,6 +489,7 @@ class DesktopPresentation(
                 if (WorkspaceController.isAudioOpen) {
                     WorkspaceController.setAudioOpen(false, slotIdx)
                 }
+                WorkspaceController.setTrayPanel(null)
             }
         }
         root.addView(scrim, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -533,6 +555,16 @@ class DesktopPresentation(
             layoutParams = FrameLayout.LayoutParams(dw, dh, Gravity.CENTER)
         }
         root.addView(audio)
+        notificationsPanel = NotificationsPanelView(context).apply {
+            visibility = View.GONE
+            layoutParams = FrameLayout.LayoutParams(dw, dh, Gravity.CENTER)
+        }
+        root.addView(notificationsPanel)
+        quickSettingsPanel = QuickSettingsPanelView(context, slotIdx).apply {
+            visibility = View.GONE
+            layoutParams = FrameLayout.LayoutParams(dw, dh, Gravity.CENTER)
+        }
+        root.addView(quickSettingsPanel)
         setContentView(root)
         // Tell the renderer where the drawer + settings panels sit on the slot's
         // Presentation surface — both share the same centred rectangle. The renderer
@@ -550,6 +582,7 @@ class DesktopPresentation(
         WorkspaceController.addDrawerStateListener(drawerStateListener)
         WorkspaceController.addSettingsStateListener(settingsStateListener)
         WorkspaceController.addAudioStateListener(audioStateListener)
+        WorkspaceController.addTrayPanelListener(trayPanelListener)
         WorkspaceController.addContextMenuStateListener(contextMenuStateListener)
         WorkspaceController.addWindowBoundsListener(windowBoundsListener)
         WorkspaceController.addSnapPreviewListener(snapPreviewListener)
@@ -564,6 +597,7 @@ class DesktopPresentation(
         WorkspaceController.removeDrawerStateListener(drawerStateListener)
         WorkspaceController.removeSettingsStateListener(settingsStateListener)
         WorkspaceController.removeAudioStateListener(audioStateListener)
+        WorkspaceController.removeTrayPanelListener(trayPanelListener)
         WorkspaceController.removeContextMenuStateListener(contextMenuStateListener)
         WorkspaceController.removeWindowBoundsListener(windowBoundsListener)
         WorkspaceController.removeSnapPreviewListener(snapPreviewListener)
@@ -579,13 +613,16 @@ class DesktopPresentation(
         mainHandler.removeCallbacks(clockTick)
         clockTick.run()
         SystemStatus.addListener(systemStatusListener)
+        NotificationCenter.addListener(notificationsListener)
         refreshStatusTray()
+        refreshNotificationIcons()
         applyTaskbarSettings()
     }
 
     override fun onStop() {
         mainHandler.removeCallbacks(clockTick)
         SystemStatus.removeListener(systemStatusListener)
+        NotificationCenter.removeListener(notificationsListener)
         super.onStop()
     }
 
@@ -605,6 +642,38 @@ class DesktopPresentation(
             outputButton.setImageResource(iconRes)
             outputButton.contentDescription = SystemStatus.activeOutputName
         }
+        if (::wifiGlyph.isInitialized) {
+            wifiGlyph.visibility = if (SystemStatus.wifiEnabled) View.VISIBLE else View.GONE
+            wifiGlyph.crossed = !SystemStatus.wifiConnected
+            wifiGlyph.level = SystemStatus.wifiLevel
+            signalGlyph.visibility = if (SystemStatus.hasCellular) View.VISIBLE else View.GONE
+            signalGlyph.crossed = SystemStatus.airplaneOn
+            signalGlyph.level = SystemStatus.cellLevel
+        }
+    }
+
+    /** Small notification icons at the tray's left end: up to [MAX_TRAY_NOTIFICATIONS], then "+N". */
+    private fun refreshNotificationIcons() {
+        if (!::notificationIcons.isInitialized) return
+        notificationIcons.removeAllViews()
+        val items = NotificationCenter.items.distinctBy { it.packageName }
+        items.take(MAX_TRAY_NOTIFICATIONS).forEach { item ->
+            notificationIcons.addView(
+                ImageView(context).apply {
+                    val icon = NotificationCenter.iconFor(item, context, UxSpaceTheme.taskbarText)
+                    if (icon != null) setImageDrawable(icon) else setImageResource(R.drawable.ic_notifications)
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    contentDescription = item.appLabel
+                },
+                LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(6) },
+            )
+        }
+        if (items.size > MAX_TRAY_NOTIFICATIONS) {
+            notificationIcons.addView(
+                statusValue().apply { text = "+${items.size - MAX_TRAY_NOTIFICATIONS}" },
+            )
+        }
+        notificationIcons.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
     }
 
     /**
@@ -864,6 +933,8 @@ class DesktopPresentation(
                 WorkspaceController.setSettingsOpen(false, slotIdx)
             WorkspaceController.isAudioOpen && WorkspaceController.audioOnScreen == slotIdx ->
                 WorkspaceController.setAudioOpen(false, slotIdx)
+            WorkspaceController.trayPanel != null && WorkspaceController.trayPanelOnScreen == slotIdx ->
+                WorkspaceController.setTrayPanel(null)
             else -> focusedPackage?.let { WorkspaceController.sendBackToApp(it) }
         }
     }
@@ -905,13 +976,18 @@ class DesktopPresentation(
     }
 
     /**
-     * Right cluster — DeX-style status / configuration tray: volume, battery, clock for
-     * now. Wi-Fi, signal, message indicator and the click-to-open quick-settings panel
-     * come in follow-up commits (see docs/TASKBAR.md).
+     * Right cluster — DeX's tray, left to right: notification icons and the quick-settings
+     * arrow; keyboard, volume and screenshot; Wi-Fi, mobile signal and battery; UxSpace
+     * settings; the clock. Notification icons and the clock open the notification panel,
+     * the arrow the quick-settings panel. See docs/TASKBAR.md.
      */
     /** Container views for status tray items, kept so settings can show/hide them. */
     private var volumeItem: View? = null
     private var batteryItem: View? = null
+
+    private lateinit var notificationIcons: LinearLayout
+    private lateinit var wifiGlyph: WifiGlyphView
+    private lateinit var signalGlyph: SignalGlyphView
 
     private fun buildRightCluster(): View {
         batteryText = statusValue()
@@ -921,14 +997,47 @@ class DesktopPresentation(
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setLineSpacing(dp(2).toFloat(), 1f)
             text = clockText()
+            background = cellBackground()
+            setPadding(dp(6), dp(2), dp(6), dp(2))
+            setOnClickListener { toggleTrayPanel(WorkspaceController.TrayPanel.NOTIFICATIONS) }
         }
+        notificationIcons = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = cellBackground()
+            setPadding(dp(6), dp(6), dp(2), dp(6))
+            visibility = View.GONE
+            contentDescription = "Notifications"
+            setOnClickListener { toggleTrayPanel(WorkspaceController.TrayPanel.NOTIFICATIONS) }
+        }
+        wifiGlyph = WifiGlyphView(context).apply { contentDescription = "Wi-Fi" }
+        signalGlyph = SignalGlyphView(context).apply { contentDescription = "Mobile signal" }
         return LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            volumeItem = buildVolumeItem()
-            batteryItem = statusItem(R.drawable.ic_battery, batteryText, "Battery")
-            addView(volumeItem)
+            addView(notificationIcons)
+            addView(
+                taskbarButton(R.drawable.ic_expand_less, "Quick settings", TRAY_CELL_DP) {
+                    toggleTrayPanel(WorkspaceController.TrayPanel.QUICK_SETTINGS)
+                },
+            )
             addView(buildDivider())
+            addView(
+                taskbarButton(R.drawable.ic_keyboard, "Keyboard", TRAY_CELL_DP) {
+                    WorkspaceController.toggleKeyboard?.invoke()
+                },
+            )
+            volumeItem = buildVolumeItem()
+            addView(volumeItem)
+            addView(
+                taskbarButton(R.drawable.ic_capture, "Screenshot", TRAY_CELL_DP) {
+                    WorkspaceController.capture()
+                },
+            )
+            addView(buildDivider())
+            addView(wifiGlyph, LinearLayout.LayoutParams(dp(18), dp(15)).apply { marginEnd = dp(6) })
+            addView(signalGlyph, LinearLayout.LayoutParams(dp(15), dp(13)).apply { marginEnd = dp(2) })
+            batteryItem = statusItem(R.drawable.ic_battery, batteryText, "Battery")
             addView(batteryItem)
             addView(
                 taskbarButton(R.drawable.ic_settings, "Settings", TRAY_CELL_DP) {
@@ -940,11 +1049,15 @@ class DesktopPresentation(
                 },
             )
             addView(buildDivider())
-            addView(
-                clock,
-                LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = dp(4) },
-            )
+            addView(clock, LinearLayout.LayoutParams(WRAP, WRAP))
         }
+    }
+
+    /** Open [panel] on this screen, or close it if it's already open here. */
+    private fun toggleTrayPanel(panel: WorkspaceController.TrayPanel) {
+        val openHere = WorkspaceController.trayPanel == panel &&
+            WorkspaceController.trayPanelOnScreen == slotIdx
+        WorkspaceController.setTrayPanel(if (openHere) null else panel, slotIdx)
     }
 
     /**
@@ -1255,6 +1368,9 @@ class DesktopPresentation(
          */
         const val TASKBAR_HEIGHT_DP = 58
         const val TASKBAR_CELL_DP = 46
+
+        /** Notification icons shown in the tray before collapsing to "+N". */
+        const val MAX_TRAY_NOTIFICATIONS = 3
         const val TRAY_CELL_DP = 36
         const val RUNNING_ICON_DP = 32
 

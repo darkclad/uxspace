@@ -73,106 +73,52 @@ later refinement: highlight the icon of the front-most (focused) window.
 
 ---
 
-## Status tray (right) — full DeX-style
+## Status tray (right) — DeX-style (built)
 
-DeX's right edge isn't a passive readout; it's a clickable surface that opens a quick
-settings / notifications panel — wifi toggle, bluetooth, mobile data, volume slider,
-brightness slider, the notification list. UxSpace mirrors that.
+Modelled on phone DeX's right edge. Left to right:
 
-### Always-visible row
-
-Right-to-left as the user sees it: **Clock + date**, **Battery %**, **Signal**, **Wi-Fi**,
-**Message indicator**, **Volume**. Compact icons; the whole row is one big click target
-that opens the panel.
-
-| Item | Source | Notes |
+| Item | Does | Source |
 |---|---|---|
-| Clock + date | `SimpleDateFormat`, re-ticked (exists) | Default: time AM/PM on top, date underneath. 12/24h + date toggles in [SETTINGS.md](SETTINGS.md). |
-| Battery | `ACTION_BATTERY_CHANGED` sticky broadcast / `BatteryManager` | Icon + %, charging glyph when plugged in. No permission. |
-| Signal | `TelephonyManager` + `TelephonyCallback.SignalStrengthsListener` (API 31+) | Bars 0–4. Hide on Wi-Fi-only devices. |
-| Wi-Fi | `ConnectivityManager` network callback + `WifiManager` RSSI → `calculateSignalLevel` | Connected / disconnected + bars. `ACCESS_WIFI_STATE`. |
-| Message indicator | `NotificationListenerService` | Dot when there are notifications. Needs notification-access opt-in. |
-| Volume | `AudioManager.STREAM_MUSIC` | Speaker icon — opens the panel rather than a separate slider. |
+| Notification icons | Up to 3 apps' small icons, then "+N"; click opens the notification panel | `NotificationCenter` (a `NotificationListenerService`) |
+| ^ | Opens the quick-settings panel | — |
+| Keyboard | Toggles the phone IME (types into the drawer search or the focused app) | `WorkspaceController.toggleKeyboard`, set by `MainActivity` |
+| Volume | Opens the audio panel; icon shows the active output | `SystemStatus` |
+| Screenshot | Captures the workspace | `WorkspaceController.capture()` |
+| Wi-Fi | Fan with 0–4 lit segments; slashed when not connected, hidden when Wi-Fi is off | `ConnectivityManager` callback, RSSI → bars |
+| Signal | Four bars; slashed in airplane mode, hidden without a SIM | `TelephonyCallback.SignalStrengthsListener` |
+| Battery | Icon + %, ⚡ when charging | `ACTION_BATTERY_CHANGED` |
+| Gear | UxSpace's own settings panel | — |
+| Clock + date | Click opens the notification panel, as in DeX | — |
 
-### Quick settings panel (DeX-style)
+Search stays in the centre cluster rather than being duplicated here. Wi-Fi and signal
+are drawn in code (`StatusGlyphs.kt`) so they can show a level; the rest are vectors.
 
-A pop-up panel anchored to the right of the bar — appears on click of the status row,
-dismissed by tapping outside or by a `×`. Layout, top to bottom:
+### Panels
 
-- **Time + date** (large), shortcut to a `Settings` gear (opens phone Settings).
-- **Brightness slider** — writes `Settings.System.SCREEN_BRIGHTNESS`. Needs
-  `WRITE_SETTINGS`, or — easier and uniform with the rest of this list — through the
-  privileged helper as `settings put system screen_brightness N`.
-- **Volume slider** — `AudioManager.setStreamVolume(STREAM_MUSIC, ...)`. No permission.
-- **Quick toggles row** — Wi-Fi, Bluetooth, Mobile data, Aeroplane, Auto-rotate, Torch.
-  Implemented through the privileged helper (`cmd wifi enabled`, `svc bluetooth enable`,
-  `svc data enable`, etc.) so UxSpace doesn't need each toggle's own permission. State is
-  read normally (no permission needed for read).
-- **Notifications list** — scrollable. `NotificationListenerService` mirrors current
-  notifications; tap dispatches the notification's content intent; long-press = dismiss.
+Both open in the shared centred modal slot (`WorkspaceController.TrayPanel`, one open at a
+time with the drawer / settings / audio panels), so the renderer re-composites them over
+app windows like the others.
 
-### Wiring
+- **Notifications** (`NotificationsPanelView`) — one card per notification: app, age,
+  title, text. Click opens the app in a workspace window (its own PendingIntent would
+  launch on the phone's screen) and clears auto-cancel ones; × dismisses; "Clear all".
+- **Quick settings** (`QuickSettingsPanelView`) — date, Wi-Fi / Bluetooth / Do not
+  disturb / Airplane mode tiles, a brightness slider, and a link to UxSpace settings.
 
-A new `SystemStatus` helper in `:app` owns the read side: registers
-`ACTION_BATTERY_CHANGED` receiver, `TelephonyCallback` for signal,
-`ConnectivityManager` callback for Wi-Fi, `AudioManager` listener for volume,
-`NotificationListenerService` for notifications. Exposes flow-style change listeners.
+### Privilege
 
-A `QuickSettingsPanel` view (built in `DesktopPresentation` as a child Window /
-floating `View` over the workspace) binds the tray + panel views to `SystemStatus` and
-calls into either Android APIs (volume, brightness via WRITE_SETTINGS) or the
-[privileged helper](PRIVILEGE.md) (wifi/bluetooth/mobile data toggles, brightness as
-fallback) for the write side.
+Apps can't flip those radios or read other apps' notifications without a Settings
+opt-in, so the [privileged helper](PRIVILEGE.md) does both, through two narrow calls
+rather than a general shell:
 
-The panel is rendered as a normal Android `View` inside `DesktopPresentation`'s view
-tree (same `Theme.DeviceDefault` styling as the taskbar), shown/hidden via
-`View.VISIBLE` — no extra `UiScreen` or virtual display needed.
+- `grantNotificationListener()` runs `cmd notification allow_listener` for UxSpace's own
+  listener (fixed in the helper). `NotificationCenter` calls it once the helper is READY.
+- `setQuickSetting(name, value)` — whitelisted names only: `wifi` / `bluetooth`
+  (`svc …`), `airplane` (`cmd connectivity airplane-mode`), `dnd`
+  (`cmd notification set_dnd`), `brightness` (`settings put system …`).
 
----
-
-## Multi-screen placement
-
-With multi-screen layouts (Two SBS, Three SBS, V/H/V) the user picks where the
-taskbar lives:
-
-- **Main-screen only** — one taskbar on the layout's designated central screen (the
-  H screen in V/H/V, the middle slot in Three SBS, slot 0 in Two SBS / Single Wide).
-  Cleanest visual; only one bar to scan; the side screens are app-only.
-- **Spanned across screens** — one continuous bar that visually crosses the screen
-  boundaries. Either rendered as a GL-drawn overlay sitting on top of the screen
-  meshes, or as width-portioned per-screen pieces that line up at the world edges
-  where adjacent screens butt-join. Reads as "one giant monitor" with apps grouped
-  by screen.
-- **Per-screen** (default today) — each screen's own `DesktopPresentation`
-  renders its own taskbar, sized to the screen's pixel width (narrow on V screens,
-  full on H). Per-screen filter means each bar only lists apps actually launched on
-  that screen.
-
-Choice is exposed in the [settings screen](SETTINGS.md) with a per-layout default
-(Single / SBS → main-only, V/H/V → main-on-H, etc.) overridable globally. Stored in
-`WorkspaceController`; overrides `Screen.showTaskbar` at render time.
-
-## Auto-hide / always-show
-
-The bar's visibility is a user choice, stored in [`WorkspaceSettings`](SETTINGS.md):
-
-- **Always shown** (default) — current behaviour: the bar sits at the bottom edge of the
-  workspace permanently, the desktop area reserves `TASKBAR_RESERVE` (currently 8.5% of
-  the desktop height) for it.
-- **Auto-hide** — the bar collapses to a thin reveal strip (a couple of dp tall) along
-  the bottom edge. It animates up to full height when the cursor enters a hot-zone near
-  the bottom of the workspace (or while the quick-settings panel is open), and slides
-  back down once the cursor leaves it and the panel is closed. The desktop area expands
-  to the full render band when the bar is collapsed, so app windows can use the extra
-  room.
-
-A toggle in the [settings screen](SETTINGS.md) plus a long-press menu item on the bar
-itself ("Auto-hide taskbar") flip between the two modes.
-
-**Touch points.** `WorkspaceSettings` (new `taskbarVisibility` enum); `DesktopPresentation`
-(reveal-strip view + slide animation, cursor-Y listener); `AppWindow.layout`
-(`TASKBAR_RESERVE` switches between the current value and 0 based on the setting); the
-settings screen.
+State is read without privilege: `Settings.Global` (Wi-Fi, Bluetooth, airplane),
+`NotificationManager.currentInterruptionFilter` (DND), `Settings.System` (brightness).
 
 ---
 

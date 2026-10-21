@@ -410,6 +410,8 @@ class MainActivity : ComponentActivity() {
         // update dialogs + system install screen are activity-context concerns and show on
         // the phone (where the final install tap must happen anyway).
         WorkspaceController.checkForUpdates = { mainHandler.post { checkForAppUpdate(silent = false) } }
+        // The taskbar's keyboard button — the phone IME is the workspace's soft keyboard.
+        WorkspaceController.toggleKeyboard = { mainHandler.post { toggleKeyboard() } }
 
         // Forward IME keystrokes into the workspace drawer's search field while the drawer
         // is open, or into a focused text field on a launched app's virtual display
@@ -788,6 +790,7 @@ class MainActivity : ComponentActivity() {
             WorkspaceController.openSoundOutputPicker = null
         }
         WorkspaceController.checkForUpdates = null
+        WorkspaceController.toggleKeyboard = null
         super.onDestroy()
     }
 

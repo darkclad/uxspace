@@ -1034,6 +1034,8 @@ class WorkspaceRenderer(
         val settingsScreen = WorkspaceController.settingsOnScreen
         val audioOpen = WorkspaceController.isAudioOpen
         val audioScreen = WorkspaceController.audioOnScreen
+        val trayOpen = WorkspaceController.trayPanel != null
+        val trayScreen = WorkspaceController.trayPanelOnScreen
         for (window in runningWindows) {
             val slotScreen = layout.screens.getOrNull(window.slotIdx) ?: continue
             if (window.displayId == null) continue  // bare display still spinning up
@@ -1100,7 +1102,8 @@ class WorkspaceRenderer(
             val drawerOpenHere = drawerOpen && drawerScreen == window.slotIdx
             val settingsOpenHere = settingsOpen && settingsScreen == window.slotIdx
             val audioOpenHere = audioOpen && audioScreen == window.slotIdx
-            if (drawerOpenHere || settingsOpenHere || audioOpenHere) {
+            val trayOpenHere = trayOpen && trayScreen == window.slotIdx
+            if (drawerOpenHere || settingsOpenHere || audioOpenHere || trayOpenHere) {
                 val modal = WorkspaceController.modalBoundsForSlot(window.slotIdx)
                 val slotUi = if (window.slotIdx == 0) desktop
                 else extraScreens.getOrNull(window.slotIdx - 1)
@@ -2479,12 +2482,14 @@ class WorkspaceRenderer(
             return
         }
         if (WorkspaceController.isDrawerOpen || WorkspaceController.isSettingsOpen ||
-            WorkspaceController.isAudioOpen || WorkspaceController.isContextMenuOpen
+            WorkspaceController.isAudioOpen || WorkspaceController.isContextMenuOpen ||
+            WorkspaceController.trayPanel != null
         ) {
             mainHandler.post {
                 WorkspaceController.setDrawerOpen(false, screenIdx)
                 WorkspaceController.setSettingsOpen(false, screenIdx)
                 WorkspaceController.setAudioOpen(false, screenIdx)
+                WorkspaceController.setTrayPanel(null)
                 WorkspaceController.setContextMenuOpen(false, screenIdx)
             }
             return
@@ -2721,6 +2726,9 @@ class WorkspaceRenderer(
             ) || (
             WorkspaceController.isAudioOpen &&
                 WorkspaceController.audioOnScreen == screenIdx
+            ) || (
+            WorkspaceController.trayPanel != null &&
+                WorkspaceController.trayPanelOnScreen == screenIdx
             )
         // Window hit only when no modal is open. The window's chrome lives in the
         // slot's Presentation view tree (so its buttons work via dispatchTap);
@@ -2828,6 +2836,9 @@ class WorkspaceRenderer(
             ) || (
             WorkspaceController.isAudioOpen &&
                 WorkspaceController.audioOnScreen == screenIdx
+            ) || (
+            WorkspaceController.trayPanel != null &&
+                WorkspaceController.trayPanelOnScreen == screenIdx
             )
         if (!anyModalOpen) {
             val window = windowOnSlotAt(screenIdx, px[0], px[1])

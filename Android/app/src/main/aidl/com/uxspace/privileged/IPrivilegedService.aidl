@@ -102,4 +102,18 @@ interface IPrivilegedService {
      * own pointer can reach the phone-side UI. No-op on real hardware.
      */
     void releasePointers() = 17;
+
+    /**
+     * Grant UxSpace's own NotificationListenerService notification access
+     * (`cmd notification allow_listener`), so the taskbar can show notifications without a
+     * trip to Settings. The component is fixed by the helper, not passed in.
+     */
+    void grantNotificationListener() = 18;
+
+    /**
+     * Flip a quick-settings toggle the app itself may not change. Whitelisted [name]s:
+     * "wifi", "bluetooth", "airplane", "dnd" (value 0 / 1) and "brightness" (0..255, which
+     * also switches auto-brightness off). Anything else is ignored.
+     */
+    void setQuickSetting(String name, int value) = 19;
 }

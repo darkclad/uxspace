@@ -480,6 +480,7 @@ object WorkspaceController {
         if (open && contextMenuOpenState) {
             setContextMenuOpen(false, screenIdx)
         }
+        if (open) setTrayPanel(null)
         drawerStateListeners.forEach { runCatching { it(open, screenIdx) } }
     }
 
@@ -697,6 +698,7 @@ object WorkspaceController {
         if (open && contextMenuOpenState) {
             setContextMenuOpen(false, screenIdx)
         }
+        if (open) setTrayPanel(null)
         settingsStateListeners.forEach { runCatching { it(open, screenIdx) } }
     }
 
@@ -753,6 +755,7 @@ object WorkspaceController {
             if (drawerOpenState) setDrawerOpen(false, screenIdx)
             if (settingsOpenState) setSettingsOpen(false, screenIdx)
             if (audioOpenState) setAudioOpen(false, screenIdx)
+            if (trayPanelState != null) setTrayPanel(null)
         }
         contextMenuStateListeners.forEach { runCatching { it(open, screenIdx, pxX, pxY) } }
     }
@@ -803,8 +806,58 @@ object WorkspaceController {
         audioOnScreen = if (open) screenIdx else -1
         if (open && drawerOpenState) setDrawerOpen(false, screenIdx)
         if (open && settingsOpenState) setSettingsOpen(false, screenIdx)
+        if (open) setTrayPanel(null)
         audioStateListeners.forEach { runCatching { it(open, screenIdx) } }
     }
+
+    /** The taskbar tray's popups (see docs/TASKBAR.md). */
+    enum class TrayPanel { NOTIFICATIONS, QUICK_SETTINGS }
+
+    @Volatile
+    private var trayPanelState: TrayPanel? = null
+
+    /** The open tray popup, or null. Shares the modal slot with drawer / settings / audio. */
+    val trayPanel: TrayPanel? get() = trayPanelState
+
+    /** Index of the screen that owns the open tray popup, or −1 when closed. */
+    @Volatile
+    var trayPanelOnScreen: Int = -1
+        private set
+
+    private val trayPanelListeners =
+        java.util.concurrent.CopyOnWriteArrayList<(panel: TrayPanel?, screenIdx: Int) -> Unit>()
+
+    fun addTrayPanelListener(listener: (panel: TrayPanel?, screenIdx: Int) -> Unit) {
+        trayPanelListeners.add(listener)
+    }
+
+    fun removeTrayPanelListener(listener: (panel: TrayPanel?, screenIdx: Int) -> Unit) {
+        trayPanelListeners.remove(listener)
+    }
+
+    /**
+     * Open [panel] on [screenIdx], or close the tray popup with `null`. Mutually exclusive
+     * with the drawer, settings, audio panel and context menu.
+     */
+    fun setTrayPanel(panel: TrayPanel?, screenIdx: Int = 0) {
+        if (panel == trayPanelState && (panel == null || screenIdx == trayPanelOnScreen)) return
+        trayPanelState = panel
+        trayPanelOnScreen = if (panel != null) screenIdx else -1
+        if (panel != null) {
+            if (drawerOpenState) setDrawerOpen(false, screenIdx)
+            if (settingsOpenState) setSettingsOpen(false, screenIdx)
+            if (audioOpenState) setAudioOpen(false, screenIdx)
+            if (contextMenuOpenState) setContextMenuOpen(false, screenIdx)
+        }
+        trayPanelListeners.forEach { runCatching { it(panel, screenIdx) } }
+    }
+
+    /**
+     * Toggle the phone's soft keyboard (typed text goes to the drawer search or the focused
+     * app). The taskbar's keyboard button calls this; MainActivity owns the IME.
+     */
+    @Volatile
+    var toggleKeyboard: (() -> Unit)? = null
 
     @Volatile
     private var optometryOpenState = false
@@ -823,6 +876,7 @@ object WorkspaceController {
             if (drawerOpenState) setDrawerOpen(false)
             if (settingsOpenState) setSettingsOpen(false)
             if (audioOpenState) setAudioOpen(false)
+            if (trayPanelState != null) setTrayPanel(null)
         }
         optometryOpenState = open
     }
@@ -849,6 +903,7 @@ object WorkspaceController {
         if (drawerOpenState) setDrawerOpen(false)
         if (settingsOpenState) setSettingsOpen(false)
         if (audioOpenState) setAudioOpen(false)
+        if (trayPanelState != null) setTrayPanel(null)
         renderer?.focusApp(packageName)
     }
 

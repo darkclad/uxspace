@@ -38,7 +38,8 @@ import kotlin.math.sin
  *  - `mode free|pinned` — workspace view mode.
  *  - `recenter` — the toolbar's align-to-head.
  *  - `layout` — cycle the multi-screen layout (FREE mode only).
- *  - `panel drawer|settings|audio|close` — open a desktop panel on the main screen.
+ *  - `panel drawer|settings|audio|notifications|quick|close` — open a desktop panel on the
+ *    main screen.
  *  - `launch <package>` — open an app's launcher activity as a workspace window.
  *  - `move <dx> <dy>` — cursor delta as a fraction of the touchpad (like a trackpad swipe).
  *  - `click`, `rclick`, `scroll <dy>`.
@@ -234,12 +235,15 @@ class SimulatorBridge : ContentProvider() {
                     "drawer" -> { { WorkspaceController.setDrawerOpen(true) } }
                     "settings" -> { { WorkspaceController.setSettingsOpen(true) } }
                     "audio" -> { { WorkspaceController.setAudioOpen(true) } }
+                    "notifications" -> { { WorkspaceController.setTrayPanel(WorkspaceController.TrayPanel.NOTIFICATIONS) } }
+                    "quick" -> { { WorkspaceController.setTrayPanel(WorkspaceController.TrayPanel.QUICK_SETTINGS) } }
                     "close" -> { {
                         WorkspaceController.setDrawerOpen(false)
                         WorkspaceController.setSettingsOpen(false)
                         WorkspaceController.setAudioOpen(false)
+                        WorkspaceController.setTrayPanel(null)
                     } }
-                    else -> return "err usage: panel drawer|settings|audio|close"
+                    else -> return "err usage: panel drawer|settings|audio|notifications|quick|close"
                 }
                 main.post(open)
             }

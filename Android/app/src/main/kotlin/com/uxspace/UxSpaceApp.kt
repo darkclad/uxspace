@@ -16,6 +16,7 @@ import com.uxspace.privileged.PrivilegedService
 import com.uxspace.spatial.WorkspaceController
 import com.uxspace.spatial.WorkspaceController.ToolbarIcons
 import com.uxspace.spatial.WorkspaceRenderer
+import com.uxspace.system.NotificationCenter
 import com.uxspace.system.SystemStatus
 
 private const val TAP_DOWN_UP_GAP_MS = 40L
@@ -94,6 +95,7 @@ class UxSpaceApp : Application() {
         // reflects it and MainActivity shows the setup card.
         PrivilegedService.ensureRunning()
         SystemStatus.init(this)
+        NotificationCenter.init(this)
         WorkspaceSettings.init(this)
         DesktopShortcutsStore.init(this)
         DesktopWallpaperStore.init(this)

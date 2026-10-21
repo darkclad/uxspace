@@ -56,6 +56,9 @@ object UxSpaceTheme {
     /** Taskbar text (clock, battery percentage). */
     const val taskbarText: Int = 0xFFF2F1F4.toInt()
 
+    /** Unlit segments of the tray's level glyphs (Wi-Fi, signal) — [taskbarText] at ~30 %. */
+    const val taskbarTextDim: Int = 0x4DF2F1F4
+
     /** Hairline separators between taskbar groups. */
     const val taskbarDivider: Int = 0x66FFFFFF
 
