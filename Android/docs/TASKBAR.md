@@ -22,20 +22,37 @@ A single horizontal bar in three zones — left and right pinned, middle centred
   └ left cluster ┘      └ running apps ┘       └─────── status tray ───────┘
 ```
 
-Build it as a horizontal `LinearLayout` filling the bar width:
-`[left cluster] [spacer weight=1] [running apps] [spacer weight=1] [status tray]`.
-The two weighted spacers keep the running-app strip centred while the clusters stay
-pinned to their edges.
+Build it as a `FrameLayout` with three gravity-pinned children: the left cluster at
+`START`, the centre cluster at `CENTER` (centred on the screen, not between the side
+clusters, so it doesn't drift as the tray grows) and the status tray at `END`.
 
 ---
 
 ## Left cluster
 
-In order: **app-drawer button**, a thin **divider**, then **Recent apps**, **Show
-desktop**, **Optometry**, **Search**.
+The navigation trio, as on Android desktop modes: **Recents**, **Home**, **Back**.
 
 | Item | Action |
 |---|---|
+| Recents (`ic_nav_recents`) | Opens the drawer on its **Recent** tab — apps recently opened **in the workspace** (Android's system recents API is not available to apps, so "recent" means UxSpace's own launch history, `WorkspaceController.recentApps`). |
+| Home (`ic_nav_home`) | Minimises every open window; a second tap restores them — `WorkspaceController.toggleShowDesktop()`. |
+| Back (`ic_nav_back`) | Closes a panel (drawer, Settings, Audio) open on this screen; otherwise sends Back to this screen's focused window (`WorkspaceController.sendBackToApp`), which closes the window once its activity stack empties. |
+
+## Centre cluster
+
+**Search**, **App drawer**, a thin **divider** (shown only while apps run), then one
+icon per running app window with a small indicator pill under it.
+
+| Item | Action |
+|---|---|
+| Search (`ic_search`) | Opens the drawer on **All apps**; typing goes to its search field. |
+| App drawer (`ic_apps`) | Toggles the drawer on this screen — `WorkspaceController.setDrawerOpen`. |
+| Running apps | Tap focuses / restores the window; long-press moves it to the next screen. |
+
+Built-in tools such as the [eye chart](OPTOMETRY.md) live in the drawer as synthetic
+entries (`BuiltInApps`), not on the taskbar.
+
+---|---|
 | App drawer (`ic_apps`, exists) | Toggles the drawer overlay — `WorkspaceController.setDrawerOpen`. Already wired; just moved to the far left. |
 | Divider | A 1dp-wide view at `UxSpaceTheme` divider colour, with vertical margins, separating the launcher from the buttons. |
 | Recent apps | A panel of apps recently opened **in the workspace** — Android's system recents API is not available to apps, so "recent" means UxSpace's own launch history. Needs a small most-recently-used list in `WorkspaceController` (`launchApp` pushes onto it). The panel reuses the drawer's overlay surface or is a small popup. |

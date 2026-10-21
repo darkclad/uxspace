@@ -15,10 +15,13 @@ the workspace's native resolution.
 
 ## Where it lives
 
-A toolbar button — see [TASKBAR.md](TASKBAR.md) for the layout — slotted between **Show
-desktop** and **Search**. Tapping it overlays the chart on top of the workspace, full
-bleed, hiding everything else (windows and the desktop wallpaper) so the chart is the only
-thing the eye sees. An on-screen `×` (and the touchpad's Back) dismisses it.
+An entry in the **app drawer**, listed alphabetically among the installed apps as
+"Eye chart". It's a synthetic entry from `BuiltInApps` (reserved package id
+`uxspace.builtin.eyechart`): launching it runs UxSpace code instead of starting an
+activity, and it can't be dragged out as a window. Opening it overlays the chart on top
+of the workspace, full bleed, hiding everything else (windows and the desktop wallpaper)
+so the chart is the only thing the eye sees. An on-screen `×` (and the taskbar's Back)
+dismisses it.
 
 ## The chart
 
@@ -48,7 +51,7 @@ A small toggle in the corner cycles through the three modes.
 ## Implementation sketch
 
 - New `OptometryPresentation : Presentation` on a `UiScreen` created and shown by
-  `WorkspaceRenderer` when the taskbar button is tapped — mirrors the drawer's lifecycle
+  `WorkspaceRenderer` when the drawer entry is launched — mirrors the drawer's lifecycle
   (`WorkspaceController.setDrawerOpen` → renderer toggles overlay).
 - Drawn full-bleed over the desktop and any windows (skip the windows in the renderer's
   draw loop when the overlay is open, same as the drawer's scrim handles the wallpaper).
@@ -59,7 +62,7 @@ A small toggle in the corner cycles through the three modes.
 
 **Touch points.** New `OptometryPresentation` + a `UiScreen` like the drawer's; a
 `WorkspaceController.setOptometryOpen(open)` hook and the renderer's overlay-draw branch;
-the taskbar button in `DesktopPresentation` (see [TASKBAR.md](TASKBAR.md)).
+`BuiltInApps.launch` (today a "coming soon" toast) calls `setOptometryOpen(true)`.
 
 ## Sources
 

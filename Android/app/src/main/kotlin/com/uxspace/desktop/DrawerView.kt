@@ -23,6 +23,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.uxspace.R
 import com.uxspace.apps.AppCache
+import com.uxspace.apps.BuiltInApps
 import com.uxspace.apps.InstalledApp
 import com.uxspace.spatial.UxSpaceTheme
 import com.uxspace.spatial.WorkspaceController
@@ -178,7 +179,8 @@ class DrawerView(context: Context) : LinearLayout(context) {
      * [WorkspaceController]), so a single global hook is enough.
      */
     private val dragLookup: (Int, Int) -> WorkspaceController.ArmedDrag? = { slotPx, slotPy ->
-        appAtSlotPx(slotPx, slotPy)?.let { app ->
+        // Built-in tools have no activity to drop onto the desktop as a window.
+        appAtSlotPx(slotPx, slotPy)?.takeUnless { BuiltInApps.isBuiltIn(it.packageName) }?.let { app ->
             WorkspaceController.ArmedDrag(
                 packageName = app.packageName,
                 activityName = app.activityName,
@@ -272,6 +274,11 @@ class DrawerView(context: Context) : LinearLayout(context) {
     }
 
     private fun launch(app: InstalledApp) {
+        if (BuiltInApps.isBuiltIn(app.packageName)) {
+            BuiltInApps.launch(context, app.packageName)
+            WorkspaceController.setDrawerOpen(false)
+            return
+        }
         android.util.Log.i(
             "UxSpace/Launch",
             "1) drawer tap pkg=${app.packageName} act=${app.activityName} label='${app.label}'",
@@ -286,7 +293,8 @@ class DrawerView(context: Context) : LinearLayout(context) {
                 "UxSpace/Drawer",
                 "DrawerView whenReady got ${list.size} apps; mode=${WorkspaceController.drawerMode}",
             )
-            mainHandler.post { adapter.submit(list) }
+            val all = (list + BuiltInApps.list(context)).sortedBy { it.label.lowercase() }
+            mainHandler.post { adapter.submit(all) }
         }
     }
 

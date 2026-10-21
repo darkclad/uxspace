@@ -20,7 +20,6 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.annotation.DrawableRes
 import com.uxspace.R
 import com.uxspace.spatial.UxSpaceTheme
@@ -72,6 +71,9 @@ class DesktopPresentation(
 
     /** Taskbar icons for the open app windows, keyed by package, in launch order. */
     private val runningIcons = LinkedHashMap<String, View>()
+
+    /** This screen's focused window, the target of the taskbar's Back; null when none. */
+    private var focusedPackage: String? = null
 
     /** Divider before the running-app strip; shown only while [runningIcons] is non-empty. */
     private var runningDivider: View? = null
@@ -296,6 +298,7 @@ class DesktopPresentation(
         }
 
     private fun applyChromeBoundsList(boundsList: List<WorkspaceController.WindowBounds>) {
+        focusedPackage = boundsList.firstOrNull { it.focused }?.packageName
         if (!::root.isInitialized) return
         // Drop chrome / frame pairs for any package no longer in the list — its
         // window was closed or moved off this slot.
@@ -829,28 +832,40 @@ class DesktopPresentation(
     }
 
     /**
-     * Left cluster — workspace controls: Recent apps, Show desktop, Optometry. See
-     * docs/TASKBAR.md for what each does.
+     * Left cluster — the navigation trio: Recents (drawer on its Recent tab), Home (show
+     * desktop) and Back. See docs/TASKBAR.md.
      */
     private fun buildLeftCluster(): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         addView(
-            taskbarButton(R.drawable.ic_recent, "Recent apps") {
+            taskbarButton(R.drawable.ic_nav_recents, "Recents") {
                 WorkspaceController.setDrawerMode(WorkspaceController.DrawerMode.RECENT)
                 WorkspaceController.setDrawerOpen(true, slotIdx)
             },
         )
         addView(
-            taskbarButton(R.drawable.ic_show_desktop, "Show desktop") {
+            taskbarButton(R.drawable.ic_nav_home, "Home") {
                 WorkspaceController.toggleShowDesktop()
             },
         )
-        addView(
-            taskbarButton(R.drawable.ic_eye, "Optometry chart") {
-                Toast.makeText(context, "Optometry chart — coming soon", Toast.LENGTH_SHORT).show()
-            },
-        )
+        addView(taskbarButton(R.drawable.ic_nav_back, "Back") { navigateBack() })
+    }
+
+    /**
+     * Taskbar Back: dismiss a panel open on this screen first, otherwise send Back to
+     * this screen's focused window (which closes the window once its stack empties).
+     */
+    private fun navigateBack() {
+        when {
+            WorkspaceController.isDrawerOpen && WorkspaceController.drawerOnScreen == slotIdx ->
+                WorkspaceController.setDrawerOpen(false, slotIdx)
+            WorkspaceController.isSettingsOpen && WorkspaceController.settingsOnScreen == slotIdx ->
+                WorkspaceController.setSettingsOpen(false, slotIdx)
+            WorkspaceController.isAudioOpen && WorkspaceController.audioOnScreen == slotIdx ->
+                WorkspaceController.setAudioOpen(false, slotIdx)
+            else -> focusedPackage?.let { WorkspaceController.sendBackToApp(it) }
+        }
     }
 
     /**
