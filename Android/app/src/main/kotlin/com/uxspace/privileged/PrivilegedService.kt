@@ -431,7 +431,10 @@ object PrivilegedService {
         }
     }
 
-    /** Simulator: take back the mouse a middle-click released (see PrivilegedServer). */
+    /** Simulator: hand the mouse to Android's own pointer (see PrivilegedServer). */
+    fun releasePointers() = onWorker { service?.releasePointers() }
+
+    /** Simulator: take back the mouse [releasePointers] handed over. */
     fun regrabPointers() = onWorker { service?.regrabPointers() }
 
     // region Privileged-call surface (mirrors ShizukuManager so UxSpaceApp swaps cleanly)

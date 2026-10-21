@@ -91,8 +91,15 @@ interface IPrivilegedService {
     void rescanGlassesUsb() = 15;
 
     /**
-     * Emulator simulator only (docs/SIMULATOR.md): re-grab the pointer devices a middle-click
-     * handed back to Android. No-op when nothing was released or on real hardware.
+     * Emulator simulator only (docs/SIMULATOR.md): re-grab the pointer devices
+     * [releasePointers] handed back to Android. No-op when nothing was released or on real
+     * hardware.
      */
     void regrabPointers() = 16;
+
+    /**
+     * Emulator simulator only: drop the helper's EVIOCGRAB on the pointer devices so Android's
+     * own pointer can reach the phone-side UI. No-op on real hardware.
+     */
+    void releasePointers() = 17;
 }

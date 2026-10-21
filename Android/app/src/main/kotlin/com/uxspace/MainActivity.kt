@@ -366,6 +366,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        if (IS_EMULATOR) binding.trackpad.hint = SIMULATOR_TRACKPAD_HINT
         binding.trackpad.onMove = { dx, dy -> WorkspaceController.moveCursor(dx, dy) }
         binding.trackpad.onTap = { WorkspaceController.click() }
         binding.trackpad.onTwoFingerDrag = { dx, dy ->
@@ -1077,6 +1078,15 @@ class MainActivity : ComponentActivity() {
     private companion object {
         /** Android emulator — enables the simulator's middle-click mouse passthrough. */
         val IS_EMULATOR = Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish"
+
+        /** Trackpad hint on the emulator, where a captured mouse drives the workspace
+         *  (the middle-button gestures live in the debug SimulatorBridge). */
+        val SIMULATOR_TRACKPAD_HINT = listOf(
+            "Simulator — click into the emulator to capture the mouse; it moves the workspace cursor",
+            "Middle-click: mouse to this toolbar · click here: back to the workspace cursor",
+            "Double middle-click: look mode on/off (move = look around, wheel = zoom)",
+            "Ctrl+R: give the mouse back to Windows",
+        )
 
         /** Settings preference key for the Wireless Debugging row in Developer Options. */
         const val WIRELESS_DEBUGGING_PREF_KEY = "toggle_adb_wireless"

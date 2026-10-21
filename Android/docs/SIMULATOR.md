@@ -105,13 +105,18 @@ mode works the way it does with real tracking. The pad starts in FREE mode, faci
   The guest then has a "QEMU Virtio Mouse" (REL_X/REL_Y). The privileged helper
   classes it MOUSE and EVIOCGRABs it, exactly like a BT mouse on the phone. Click
   inside any emulator window to capture the host mouse; it then drives the workspace
-  cursor, and the wheel scrolls. **Hold the middle button and move** to turn the
-  head, which is how you look around in FREE mode. **Middle-click** (with no
-  movement) to hand the mouse to the left
-  (phone) window. Android's pointer appears there, and you can click the toolbar
-  icons. **Click on the touchpad area** to give the mouse back to the workspace
-  cursor. This is emulator-only; on a phone the middle button is untouched. The
-  emulator gives the mouse back to Windows on **Ctrl+R**.
+  cursor, and the wheel scrolls. The emulator swallows host keys while it has the
+  mouse captured, so the gestures below all use the middle button. The touchpad
+  hint lists them too.
+
+  | Gesture | Effect |
+  |---|---|
+  | **Double middle-click** | Toggle look mode, with an in-view "Look mode on/off" label. In look mode, moving the mouse turns the head (pans the screens; use FREE mode) and the wheel zooms. |
+  | **Middle-click** | Hand the mouse to the left (phone) window. Android's pointer appears there and you can click the toolbar icons. It acts after a ~350 ms double-click window. |
+  | **Click on the touchpad area** | Give the mouse back to the workspace cursor. |
+  | **Ctrl+R** | The emulator gives the mouse back to Windows. |
+
+  This is all emulator-only. On a phone the middle button is untouched.
 - **Mouse, uncaptured:** without that flag, the host mouse arrives as touch.
   Click-drag on the emulator's main screen. That screen is the UxSpace touchpad, so
   drag moves the cursor, tap clicks, hold grabs a window, and two fingers scroll.

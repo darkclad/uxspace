@@ -463,14 +463,22 @@ class TrackpadView @JvmOverloads constructor(
         return sqrt(dx * dx + dy * dy)
     }
 
+    /** Centred hint text; one line per entry. */
+    var hint: List<String> =
+        listOf("Touchpad — drag to move · tap to click · hold to grab a window · two fingers scroll")
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawText(
-            "Touchpad — drag to move · tap to click · hold to grab a window · two fingers scroll",
-            width / 2f,
-            height / 2f,
-            labelPaint,
-        )
+        val lineHeight = labelPaint.textSize * HINT_LINE_SPACING
+        var y = height / 2f - lineHeight * (hint.size - 1) / 2f
+        for (line in hint) {
+            canvas.drawText(line, width / 2f, y, labelPaint)
+            y += lineHeight
+        }
     }
 
     private companion object {
@@ -500,5 +508,8 @@ class TrackpadView @JvmOverloads constructor(
 
         /** Below this total vertical travel during the gesture, no auto-scroll starts. */
         const val MIN_FLICK_PX = 20
+
+        /** Hint line pitch, in multiples of the label text size. */
+        const val HINT_LINE_SPACING = 1.6f
     }
 }

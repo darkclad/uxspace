@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.uxspace.apps.BuiltInApps
 import com.uxspace.privileged.PrivilegedService
 import com.uxspace.spatial.WorkspaceController
 import com.uxspace.spatial.WorkspaceRenderer
@@ -18,7 +19,9 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
+import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.sin
 
 /**
@@ -42,8 +45,10 @@ import kotlin.math.sin
  *  - `pair <code>` — the Wireless debugging pairing code, as if typed into the pairing
  *    notification; replies once pairing finishes. `state` — the privileged helper's state.
  *
- * On the emulator it also turns a middle-button drag of the captured mouse into head look
- * (the helper still treats a middle *click* as "hand the mouse to the touchpad").
+ * On the emulator it also owns the captured mouse's middle button (the emulator's mouse
+ * capture swallows host keys, so no keyboard modifier can do this): a single middle-click
+ * hands the mouse to the phone-side toolbar, and a double middle-click toggles look mode, in
+ * which mouse motion turns the head and the wheel zooms.
  *
  * Started by this provider's [onCreate], which runs at process start before the
  * Application — so it needs no hook in the main source set. Release builds never contain it.
@@ -58,7 +63,18 @@ class SimulatorBridge : ContentProvider() {
     /** `dof off` — stop [keepDofLive] from re-marking the fake pose stream live. */
     @Volatile private var dofOff = false
 
-    private var middleHeld = false
+    /** Look mode: mouse motion turns the head, the wheel zooms. Main thread only. */
+    private var lookMode = false
+
+    /** Raw ticks moved since the middle button went down, or -1 while it is up. */
+    private var middleMotion = -1
+
+    /** A single middle-click waiting out [DOUBLE_CLICK_MS] before it releases the mouse. */
+    private val pendingRelease = Runnable {
+        releasePending = false
+        PrivilegedService.releasePointers()
+    }
+    private var releasePending = false
 
     override fun onCreate(): Boolean {
         thread(name = "uxspace-sim", isDaemon = true) { serve() }
@@ -82,22 +98,73 @@ class SimulatorBridge : ContentProvider() {
         }
     }
 
-    /** Wrap the helper's raw mouse handlers: motion with the middle button held turns the head. */
+    /**
+     * Wrap the helper's raw mouse handlers with the middle-button gestures. A click is a
+     * press + release that moved under [CLICK_SLOP] ticks; the first click waits
+     * [DOUBLE_CLICK_MS] so a second one can turn it into a double.
+     */
     private fun installMouseLook() {
         val buttons = PrivilegedService.mouseButtonHandler
         val deltas = PrivilegedService.mouseDeltaHandler
         PrivilegedService.mouseButtonHandler = { code, pressed ->
-            if (code == BTN_MIDDLE) middleHeld = pressed
+            if (code == BTN_MIDDLE) {
+                if (pressed) {
+                    middleMotion = 0
+                } else {
+                    if (middleMotion in 0 until CLICK_SLOP) onMiddleClick()
+                    middleMotion = -1
+                }
+            }
             buttons?.invoke(code, pressed)
         }
         PrivilegedService.mouseDeltaHandler = { dx, dy, wheel ->
-            if (middleHeld) {
-                yaw = ((yaw + dx * LOOK_DEG_PER_TICK) + 540f) % 360f - 180f
-                pitch = (pitch - dy * LOOK_DEG_PER_TICK).coerceIn(-89f, 89f)
-                applyPose()
+            if (middleMotion >= 0) middleMotion += abs(dx) + abs(dy) + abs(wheel) * CLICK_SLOP
+            if (lookMode) {
+                if (dx != 0 || dy != 0) {
+                    yaw = ((yaw + dx * LOOK_DEG_PER_TICK) + 540f) % 360f - 180f
+                    pitch = (pitch - dy * LOOK_DEG_PER_TICK).coerceIn(-89f, 89f)
+                    applyPose()
+                }
+                if (wheel != 0) {
+                    zoomLogPending += wheel * ZOOM_LOG_PER_TICK
+                    if (!zoomEasing) {
+                        zoomEasing = true
+                        main.post(zoomEase)
+                    }
+                }
             } else {
                 deltas?.invoke(dx, dy, wheel)
             }
+        }
+    }
+
+    /** Look-mode zoom still to apply, as ln(scale); [zoomEase] drains it over a few frames. */
+    private var zoomLogPending = 0f
+    private var zoomEasing = false
+
+    /**
+     * Apply a fraction of the pending wheel zoom per frame, so it glides instead of jumping a
+     * whole notch at once. Faster scrolling piles up more pending zoom, so it zooms faster.
+     */
+    private val zoomEase: Runnable = object : Runnable {
+        override fun run() {
+            val step = if (abs(zoomLogPending) < ZOOM_LOG_EPSILON) zoomLogPending
+                       else zoomLogPending * ZOOM_EASE_FRACTION
+            zoomLogPending -= step
+            if (step != 0f) WorkspaceController.pinch(exp(step))
+            if (zoomLogPending != 0f) main.postDelayed(this, FRAME_MS) else zoomEasing = false
+        }
+    }
+
+    private fun onMiddleClick() {
+        if (releasePending) {
+            main.removeCallbacks(pendingRelease)
+            releasePending = false
+            lookMode = !lookMode
+            WorkspaceController.announceInView(if (lookMode) "Look mode on" else "Look mode off")
+        } else {
+            releasePending = true
+            main.postDelayed(pendingRelease, DOUBLE_CLICK_MS)
         }
     }
 
@@ -178,6 +245,10 @@ class SimulatorBridge : ContentProvider() {
             }
             "launch" -> {
                 val pkg = args.getOrNull(1) ?: return "err usage: launch <package>"
+                if (BuiltInApps.isBuiltIn(pkg)) {
+                    main.post { BuiltInApps.launch(pkg, 0) }
+                    return "ok"
+                }
                 val launch = context?.packageManager?.getLaunchIntentForPackage(pkg)?.component
                     ?: return "err no launcher activity for $pkg"
                 main.post { WorkspaceController.launchApp(pkg, launch.className, pkg.substringAfterLast('.')) }
@@ -242,8 +313,28 @@ class SimulatorBridge : ContentProvider() {
         /** How often [keepDofLive] checks for a (re)shown workspace. */
         const val DOF_CHECK_MS = 1000L
 
-        /** Head turn per raw mouse tick while middle-dragging. */
+        /** Head turn per raw mouse tick in look mode. */
         const val LOOK_DEG_PER_TICK = 0.15f
+
+        /** Raw ticks a middle press may move (a wheel notch counts as all of them) and still click. */
+        const val CLICK_SLOP = 12
+
+        /** Max gap between the two middle-clicks of a double-click. */
+        const val DOUBLE_CLICK_MS = 350L
+
+        /**
+         * Look-mode zoom per raw wheel tick, as ln(scale). The emulator's virtio wheel reports
+         * 8 ticks per notch, so this is about 6% per notch.
+         */
+        const val ZOOM_LOG_PER_TICK = 0.0073f
+
+        /** Share of the pending zoom [zoomEase] applies each frame. */
+        const val ZOOM_EASE_FRACTION = 0.3f
+
+        /** Below this much pending ln(scale), apply the rest at once. */
+        const val ZOOM_LOG_EPSILON = 0.002f
+
+        const val FRAME_MS = 16L
 
         /** Kernel BTN_MIDDLE, as the helper reports it. */
         const val BTN_MIDDLE = 274
