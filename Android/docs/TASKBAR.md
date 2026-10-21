@@ -54,17 +54,6 @@ icon per running app window with a small indicator pill under it.
 Built-in tools such as the [eye chart](OPTOMETRY.md) live in the drawer as synthetic
 entries (`BuiltInApps`), not on the taskbar.
 
----|---|
-| App drawer (`ic_apps`, exists) | Toggles the drawer overlay — `WorkspaceController.setDrawerOpen`. Already wired; just moved to the far left. |
-| Divider | A 1dp-wide view at `UxSpaceTheme` divider colour, with vertical margins, separating the launcher from the buttons. |
-| Recent apps | A panel of apps recently opened **in the workspace** — Android's system recents API is not available to apps, so "recent" means UxSpace's own launch history. Needs a small most-recently-used list in `WorkspaceController` (`launchApp` pushes onto it). The panel reuses the drawer's overlay surface or is a small popup. |
-| Show desktop | Minimises every open window; a second tap restores them. Each `AppWindow` already has a `minimized` flag — add `WorkspaceController.toggleShowDesktop()` that sets/clears it on all windows. |
-| Optometry | Opens the [optometry pseudo-app](OPTOMETRY.md) — a Snellen-style chart overlay for dialling in the VITURE focus wheels. |
-| Search | Opens the drawer with its search field focused — `DrawerPresentation` already has the field; add a way to open the drawer *and* request focus on it. |
-
-New vector drawables needed: recent apps, show desktop, optometry (e.g. a stylised eye),
-search, and the divider.
-
 ---
 
 ## Running apps (middle)

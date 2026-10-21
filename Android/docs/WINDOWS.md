@@ -7,7 +7,7 @@ How app windows behave in the workspace — what exists today, and the plan for 
 
 A launched app is an [`AppWindow`](../spatial/src/main/kotlin/com/uxspace/spatial/AppWindow.kt):
 a fixed-resolution content surface (`VirtualScreen`, 1600×900) framed by window chrome
-(`UiScreen` — a light-grey border and a title bar). `WorkspaceRenderer` holds up to three
+(`UiScreen` — a dark border and a DeX-style title bar, colours from `UxSpaceTheme`). `WorkspaceRenderer` holds up to three
 windows in a back-to-front list and draws them in order.
 
 A window is in one of two states:

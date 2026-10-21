@@ -68,6 +68,9 @@ with on-device DOF or Carina VIO) should work — but expect to do some debuggin
 | Area                              | State                                                |
 |-----------------------------------|------------------------------------------------------|
 | Desktop, taskbar, drawer          | ✅  Working on the glasses                            |
+| DeX-style shell (dark taskbar + tray, drawer, panels, window chrome) | 🧪  New; verified on the simulator, not yet on the glasses |
+| Eye chart (focus calibration, in the app drawer) | 🧪  New; verified on the simulator, not yet on the glasses |
+| Emulator simulator ([`docs/SIMULATOR.md`](docs/SIMULATOR.md)) | ✅  Working — UI work without glasses |
 | Multi-window, drag / resize       | ✅  Working                                           |
 | Head tracking (Carina VIO)        | ✅  Working                                           |
 | Multiple slot layouts             | ✅  Single / Single-Wide / SBS / V-H-V                |
@@ -104,7 +107,9 @@ a specific commit.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the layered design. To work on the
 desktop UI without glasses, run it on an Android emulator: see
-[`docs/SIMULATOR.md`](docs/SIMULATOR.md).
+[`docs/SIMULATOR.md`](docs/SIMULATOR.md). Planned desktop features borrowed from DeX
+(Alt+Tab, pinned apps, window shortcuts, quarter snapping, virtual desktops …) are in
+[`docs/DEX_FEATURES.md`](docs/DEX_FEATURES.md).
 
 ---
 
