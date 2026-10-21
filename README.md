@@ -17,7 +17,7 @@ identifier, and the proprietary VITURE SDK:
 
 | Platform | Path | What it is | Status |
 |----------|------|------------|--------|
-| **Android** | [`Android/`](Android/) | A DeX-style spatial desktop driven from the phone — taskbar, app drawer, multi-window framework, phone-as-trackpad, BT keyboard/mouse. The glasses are a USB-C external display the app owns. | **Alpha PoC** — desktop, windowing, head tracking, hotkeys, raw-mouse path all work today. |
+| **Android** | [`Android/`](Android/) | A DeX-style spatial desktop driven from the phone — taskbar, app drawer, multi-window framework, phone-as-trackpad, BT keyboard/mouse. The glasses are a USB-C external display the app owns. | **Alpha PoC** — desktop, windowing, head tracking, hotkeys, raw-mouse path all work today; runs on an Android emulator without glasses ([simulator](Android/docs/SIMULATOR.md)). |
 | **Windows** | [`Windows/`](Windows/) | Up to three **virtual monitors** captured and rendered into the glasses in stereo, with 6DOF head tracking. Uses a forked IddCx virtual-display driver. | **W3 in progress** — driver, capture, stereo output, head tracking, multi-monitor live; settings/lifecycle still ahead. |
 
 Android is the canonical reference for the shared layering; the Windows side mirrors
@@ -34,6 +34,16 @@ UxSpace/
 
 Both projects were merged in with their full upstream histories preserved via
 `git subtree`; the original per-project commits are reachable as ancestors of `main`.
+
+## Developing without glasses: the Android simulator
+
+The Android desktop runs on a stock **Android emulator**, no glasses or phone needed:
+the emulator's second display stands in for the glasses, a small PC tool
+(`Android/tools/simulator/uxsim.py`) fakes head pose and drives the workspace over
+`adb`, and your mouse and keyboard work inside it like a Bluetooth mouse and keyboard
+on the phone. It builds without the VITURE SDK (`-PuxspaceNoViture`), so it is also the
+quickest way to try UxSpace from a fresh clone. Setup and daily steps:
+[`Android/docs/SIMULATOR.md`](Android/docs/SIMULATOR.md).
 
 ## The VITURE SDK is not committed
 
