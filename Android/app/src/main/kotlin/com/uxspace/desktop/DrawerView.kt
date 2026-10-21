@@ -24,6 +24,7 @@ import android.widget.TextView
 import com.uxspace.R
 import com.uxspace.apps.AppCache
 import com.uxspace.apps.InstalledApp
+import com.uxspace.spatial.UxSpaceTheme
 import com.uxspace.spatial.WorkspaceController
 
 /**
@@ -58,8 +59,9 @@ class DrawerView(context: Context) : LinearLayout(context) {
 
     init {
         orientation = VERTICAL
-        setBackgroundColor(PANEL_COLOR)
-        setPadding(dp(22), dp(22), dp(22), dp(20))
+        // Clipped card, so the grid's fading edge and press highlights stay inside it.
+        PanelStyle.applyCard(this)
+        setPadding(dp(28), dp(14), dp(28), dp(18))
 
         allAppsTab = tabLabel("All apps") {
             WorkspaceController.setDrawerMode(WorkspaceController.DrawerMode.ALL)
@@ -73,15 +75,22 @@ class DrawerView(context: Context) : LinearLayout(context) {
             addView(allAppsTab)
             addView(
                 recentTab,
-                LayoutParams(WRAP, WRAP).apply { marginStart = dp(36) },
+                LayoutParams(WRAP, WRAP).apply { marginStart = dp(8) },
             )
         }
 
         grid = GridView(context).apply {
             numColumns = DRAWER_COLUMNS
             stretchMode = GridView.STRETCH_COLUMN_WIDTH
-            verticalSpacing = dp(8)
+            verticalSpacing = 0
             isVerticalScrollBarEnabled = false
+            // Rows dissolve into the card at the bottom edge rather than being cut off.
+            isVerticalFadingEdgeEnabled = true
+            setFadingEdgeLength(dp(32))
+            selector = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(UxSpaceTheme.taskbarPressed)
+            }
             adapter = this@DrawerView.adapter
             setOnItemClickListener { _, _, position, _ ->
                 (this@DrawerView.adapter.getItem(position) as? InstalledApp)?.let(::launch)
@@ -90,17 +99,25 @@ class DrawerView(context: Context) : LinearLayout(context) {
 
         search = EditText(context).apply {
             hint = "Search"
-            setHintTextColor(HINT_COLOR)
-            setTextColor(TAB_ACTIVE)
-            textSize = 14f
+            setHintTextColor(UxSpaceTheme.drawerSearchHint)
+            setTextColor(UxSpaceTheme.drawerLabel)
+            textSize = 15f
             setSingleLine()
+            gravity = Gravity.CENTER_VERTICAL
             background = GradientDrawable().apply {
-                cornerRadius = dp(22).toFloat()
-                setColor(SEARCH_COLOR)
+                cornerRadius = dp(SEARCH_HEIGHT_DP / 2).toFloat()
+                setColor(UxSpaceTheme.drawerSearch)
+                setStroke(1, UxSpaceTheme.panelStroke)
             }
-            setPadding(dp(20), dp(12), dp(20), dp(12))
-            setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_search, 0, 0, 0)
-            compoundDrawablePadding = dp(10)
+            setPadding(dp(14), 0, dp(16), 0)
+            setCompoundDrawablesRelative(
+                context.getDrawable(R.drawable.ic_search)?.mutate()?.apply {
+                    setBounds(0, 0, dp(20), dp(20))
+                    setTint(UxSpaceTheme.drawerSearchHint)
+                },
+                null, null, null,
+            )
+            compoundDrawablePadding = dp(8)
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
@@ -110,9 +127,15 @@ class DrawerView(context: Context) : LinearLayout(context) {
             })
         }
 
-        addView(tabs, LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) })
+        addView(tabs, LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) })
         addView(grid, LayoutParams(MATCH, 0, 1f))
-        addView(search, LayoutParams(MATCH, WRAP).apply { topMargin = dp(14) })
+        addView(
+            search,
+            LayoutParams(dp(SEARCH_WIDTH_DP), dp(SEARCH_HEIGHT_DP)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = dp(12)
+            },
+        )
 
         applyMode(WorkspaceController.drawerMode)
         loadApps()
@@ -221,11 +244,16 @@ class DrawerView(context: Context) : LinearLayout(context) {
 
     private fun styleTab(tab: TextView, active: Boolean) {
         if (active) {
-            tab.setTextColor(TAB_ACTIVE)
-            tab.typeface = Typeface.DEFAULT_BOLD
+            tab.setTextColor(UxSpaceTheme.drawerTabActive)
+            tab.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            tab.background = GradientDrawable().apply {
+                cornerRadius = dp(16).toFloat()
+                setColor(UxSpaceTheme.drawerTabPill)
+            }
         } else {
-            tab.setTextColor(TAB_INACTIVE)
+            tab.setTextColor(UxSpaceTheme.drawerTabInactive)
             tab.typeface = Typeface.DEFAULT
+            tab.background = null
         }
     }
 
@@ -237,9 +265,9 @@ class DrawerView(context: Context) : LinearLayout(context) {
 
     private fun tabLabel(text: String, onClick: () -> Unit): TextView = TextView(context).apply {
         this.text = text
-        textSize = 15f
-        setPadding(dp(8), dp(6), dp(8), dp(6))
-        setTextColor(TAB_INACTIVE)
+        textSize = 13f
+        setPadding(dp(14), dp(6), dp(14), dp(6))
+        setTextColor(UxSpaceTheme.drawerTabInactive)
         setOnClickListener { onClick() }
     }
 
@@ -321,12 +349,13 @@ class DrawerView(context: Context) : LinearLayout(context) {
         private fun newCell(): LinearLayout = LinearLayout(context).apply {
             orientation = VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(6), dp(10), dp(6), dp(10))
-            addView(ImageView(context), LayoutParams(dp(52), dp(52)))
+            setPadding(dp(4), dp(10), dp(4), dp(10))
+            addView(ImageView(context), LayoutParams(dp(ICON_DP), dp(ICON_DP)))
             addView(
                 TextView(context).apply {
-                    setTextColor(LABEL_COLOR)
+                    setTextColor(UxSpaceTheme.drawerLabel)
                     textSize = 11f
+                    setShadowLayer(dp(2).toFloat(), 0f, dp(1).toFloat(), 0x66000000)
                     gravity = Gravity.CENTER
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
@@ -341,12 +370,11 @@ class DrawerView(context: Context) : LinearLayout(context) {
         const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
         const val DRAWER_COLUMNS = 8
 
-        const val PANEL_COLOR = 0xFFECEDEF.toInt()
-        const val SEARCH_COLOR = 0xFFE3E4E8.toInt()
-        const val LABEL_COLOR = 0xFF33353B.toInt()
-        const val TAB_ACTIVE = 0xFF1A1B1F.toInt()
-        const val TAB_INACTIVE = 0xFF9A9CA3.toInt()
-        const val HINT_COLOR = 0xFF8A8C93.toInt()
+        // Card geometry: the desktop-mode reference's px sizes ÷ 1.25, since slot
+        // displays run at 200 dpi.
+        const val ICON_DP = 46
+        const val SEARCH_WIDTH_DP = 224
+        const val SEARCH_HEIGHT_DP = 40
 
         /** Fallback rasterisation size for an app icon with no intrinsic dims. */
         const val DRAG_ICON_PX = 192

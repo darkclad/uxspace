@@ -4,6 +4,8 @@ import android.app.Presentation
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -70,6 +72,9 @@ class DesktopPresentation(
 
     /** Taskbar icons for the open app windows, keyed by package, in launch order. */
     private val runningIcons = LinkedHashMap<String, View>()
+
+    /** Divider before the running-app strip; shown only while [runningIcons] is non-empty. */
+    private var runningDivider: View? = null
 
     /** Display label per running package — for the window-chrome title text. */
     private val runningLabels = HashMap<String, String>()
@@ -484,10 +489,10 @@ class DesktopPresentation(
         // Insets from screen edges so it doesn't cover the whole surface; tap outside
         // would land on the wallpaper (no close-on-outside yet — drawer closes when an
         // app is launched or on lock/unlock).
-        // Drawer size: aspect-preserved fit inside 60% of the host screen's pixel
+        // Drawer size: aspect-preserved fit inside 74% of the host screen's pixel
         // dims, with both the baseline cap and the aspect transposed to portrait on
         // a V slot. Without the transpose, a V slot (1080×1920) clamps effectiveH
-        // to the landscape baseline H (1080) and keeps the landscape 1400×920
+        // to the landscape baseline H (1080) and keeps the landscape 870×800
         // aspect, producing a stubby horizontal drawer in the middle of a tall
         // screen. Cap rule unchanged: ultrawide / panoramic screens still get the
         // *same* drawer as a single 1920×1080 screen.
@@ -786,60 +791,50 @@ class DesktopPresentation(
     }.getOrDefault("UxSpace")
 
     /**
-     * The three-cluster DeX-style bar (see docs/TASKBAR.md). Left and right clusters are
-     * pinned to their edges; the running-app strip in the middle is centred between them by
-     * weighted spacers.
+     * The three-cluster DeX-style bar (see docs/TASKBAR.md): workspace controls pinned
+     * left, the launcher group (Search, App drawer, running apps) centred on the *screen*
+     * — not between the side clusters, so it doesn't drift as the tray grows — and the
+     * status tray pinned right.
      */
     private fun buildTaskbar(): View {
         runningApps = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(buildLeftCluster(), LinearLayout.LayoutParams(WRAP, MATCH))
-            addView(View(context), LinearLayout.LayoutParams(0, MATCH, 1f))
-            addView(runningApps, LinearLayout.LayoutParams(WRAP, MATCH))
-            addView(View(context), LinearLayout.LayoutParams(0, MATCH, 1f))
-            addView(buildRightCluster(), LinearLayout.LayoutParams(WRAP, MATCH))
-        }
-        val bar = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(16), dp(4), dp(16), dp(4))
+        val bar = FrameLayout(context).apply {
+            setPadding(dp(12), 0, dp(16), 0)
             setBackgroundColor(UxSpaceTheme.taskbar)
-            addView(row, LinearLayout.LayoutParams(MATCH, MATCH))
+            addView(
+                buildLeftCluster(),
+                FrameLayout.LayoutParams(WRAP, MATCH, Gravity.START or Gravity.CENTER_VERTICAL),
+            )
+            addView(
+                buildCenterCluster(),
+                FrameLayout.LayoutParams(WRAP, MATCH, Gravity.CENTER),
+            )
+            addView(
+                buildRightCluster(),
+                FrameLayout.LayoutParams(WRAP, MATCH, Gravity.END or Gravity.CENTER_VERTICAL),
+            )
         }
         return FrameLayout(context).apply {
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
-            addView(bar, FrameLayout.LayoutParams(MATCH, dp(58)).apply { gravity = Gravity.BOTTOM })
+            addView(
+                bar,
+                FrameLayout.LayoutParams(MATCH, dp(TASKBAR_HEIGHT_DP)).apply {
+                    gravity = Gravity.BOTTOM
+                },
+            )
         }
     }
 
     /**
-     * Left cluster — DeX-style launch shelf: drawer, divider, then Recent apps, Show
-     * desktop, Optometry, Search. See docs/TASKBAR.md for what each does.
+     * Left cluster — workspace controls: Recent apps, Show desktop, Optometry. See
+     * docs/TASKBAR.md for what each does.
      */
     private fun buildLeftCluster(): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        addView(
-            taskbarButton(R.drawable.ic_apps, "App drawer") {
-                // Toggle is local to *this* slot — if the drawer is open on another
-                // monitor, one click moves it here instead of taking two (close-then-
-                // open). Only close when the drawer is already on this slot.
-                val openHere = WorkspaceController.isDrawerOpen &&
-                    WorkspaceController.drawerOnScreen == slotIdx
-                android.util.Log.i(
-                    "UxSpace/Drawer",
-                    "screen=$slotIdx drawer button clicked, openOn=" +
-                        "${WorkspaceController.drawerOnScreen} openHere=$openHere",
-                )
-                WorkspaceController.setDrawerMode(WorkspaceController.DrawerMode.ALL)
-                WorkspaceController.setDrawerOpen(!openHere, slotIdx)
-            },
-        )
-        addView(buildDivider())
         addView(
             taskbarButton(R.drawable.ic_recent, "Recent apps") {
                 WorkspaceController.setDrawerMode(WorkspaceController.DrawerMode.RECENT)
@@ -856,6 +851,15 @@ class DesktopPresentation(
                 Toast.makeText(context, "Optometry chart — coming soon", Toast.LENGTH_SHORT).show()
             },
         )
+    }
+
+    /**
+     * Centre cluster — the launcher group: Search, App drawer, a divider, then one icon
+     * per running app window.
+     */
+    private fun buildCenterCluster(): View = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
         addView(
             taskbarButton(R.drawable.ic_search, "Search") {
                 // Search reaches all installed apps — not just the recent subset.
@@ -863,6 +867,26 @@ class DesktopPresentation(
                 WorkspaceController.setDrawerOpen(true, slotIdx)
             },
         )
+        addView(
+            taskbarButton(R.drawable.ic_apps, "App drawer") {
+                // Toggle is local to *this* slot — if the drawer is open on another
+                // monitor, one click moves it here instead of taking two (close-then-
+                // open). Only close when the drawer is already on this slot.
+                val openHere = WorkspaceController.isDrawerOpen &&
+                    WorkspaceController.drawerOnScreen == slotIdx
+                android.util.Log.i(
+                    "UxSpace/Drawer",
+                    "screen=$slotIdx drawer button clicked, openOn=" +
+                        "${WorkspaceController.drawerOnScreen} openHere=$openHere",
+                )
+                WorkspaceController.setDrawerMode(WorkspaceController.DrawerMode.ALL)
+                WorkspaceController.setDrawerOpen(!openHere, slotIdx)
+            },
+        )
+        // Separates the launchers from running apps; hidden while nothing is running.
+        runningDivider = buildDivider().apply { visibility = View.GONE }
+        addView(runningDivider)
+        addView(runningApps, LinearLayout.LayoutParams(WRAP, MATCH))
     }
 
     /**
@@ -879,8 +903,8 @@ class DesktopPresentation(
         clock = TextView(context).apply {
             setTextColor(UxSpaceTheme.taskbarText)
             textSize = 12.5f
-            gravity = Gravity.END
-            setLineSpacing(0f, 0.95f)
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setLineSpacing(dp(2).toFloat(), 1f)
             text = clockText()
         }
         return LinearLayout(context).apply {
@@ -889,9 +913,10 @@ class DesktopPresentation(
             volumeItem = buildVolumeItem()
             batteryItem = statusItem(R.drawable.ic_battery, batteryText, "Battery")
             addView(volumeItem)
+            addView(buildDivider())
             addView(batteryItem)
             addView(
-                taskbarButton(R.drawable.ic_settings, "Settings") {
+                taskbarButton(R.drawable.ic_settings, "Settings", TRAY_CELL_DP) {
                     // Same one-click move semantics as the App drawer: clicking on a
                     // different slot's Settings button moves the panel here in one tap.
                     val openHere = WorkspaceController.isSettingsOpen &&
@@ -899,9 +924,10 @@ class DesktopPresentation(
                     WorkspaceController.setSettingsOpen(!openHere, slotIdx)
                 },
             )
+            addView(buildDivider())
             addView(
                 clock,
-                LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = dp(8) },
+                LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = dp(4) },
             )
         }
     }
@@ -914,13 +940,13 @@ class DesktopPresentation(
     private fun buildVolumeItem(): View {
         outputButton = ImageButton(context).apply {
             setImageResource(R.drawable.ic_volume)
-            background = null
+            background = cellBackground()
             contentDescription = "Audio"
-            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(TRAY_CELL_DP), dp(TRAY_CELL_DP)).apply {
                 marginStart = dp(2)
                 marginEnd = dp(2)
             }
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setPadding(dp(7), dp(7), dp(7), dp(7))
             scaleType = ImageView.ScaleType.FIT_CENTER
             setOnClickListener {
                 val openHere = WorkspaceController.isAudioOpen &&
@@ -939,7 +965,10 @@ class DesktopPresentation(
     ): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { marginEnd = dp(12) }
+        layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply {
+            marginStart = dp(6)
+            marginEnd = dp(6)
+        }
         contentDescription = description
         addView(
             ImageView(context).apply {
@@ -962,27 +991,42 @@ class DesktopPresentation(
     private fun taskbarButton(
         @DrawableRes icon: Int,
         description: String,
+        cellDp: Int = TASKBAR_CELL_DP,
         onClick: () -> Unit,
     ): ImageButton = ImageButton(context).apply {
         setImageResource(icon)
-        background = null
+        background = cellBackground()
         contentDescription = description
-        layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply {
+        layoutParams = LinearLayout.LayoutParams(dp(cellDp), dp(cellDp)).apply {
             marginStart = dp(2)
             marginEnd = dp(2)
         }
-        setPadding(dp(8), dp(8), dp(8), dp(8))
+        // Glyph = cell minus padding: 26 dp in a launcher cell, 22 dp in a tray cell.
+        val glyphDp = if (cellDp >= TASKBAR_CELL_DP) 26 else 22
+        val pad = dp((cellDp - glyphDp) / 2)
+        setPadding(pad, pad, pad, pad)
         scaleType = ImageView.ScaleType.FIT_CENTER
         setOnClickListener { onClick() }
     }
 
-    /** 1dp vertical line between the drawer button and the rest of the left cluster. */
+    /** Rounded highlight shown while a taskbar cell is pressed; clear otherwise. */
+    private fun cellBackground(): Drawable = StateListDrawable().apply {
+        addState(
+            intArrayOf(android.R.attr.state_pressed),
+            GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(UxSpaceTheme.taskbarPressed)
+            },
+        )
+    }
+
+    /** 1 px × 20 dp hairline between taskbar groups. */
     private fun buildDivider(): View = View(context).apply {
-        layoutParams = LinearLayout.LayoutParams(dp(1), dp(32)).apply {
-            marginStart = dp(6)
-            marginEnd = dp(6)
+        layoutParams = LinearLayout.LayoutParams(1, dp(20)).apply {
+            marginStart = dp(8)
+            marginEnd = dp(8)
         }
-        setBackgroundColor(DIVIDER_COLOR)
+        setBackgroundColor(UxSpaceTheme.taskbarDivider)
     }
 
     /**
@@ -992,9 +1036,25 @@ class DesktopPresentation(
      */
     private fun addRunningApp(packageName: String, label: String) {
         if (!::runningApps.isInitialized || runningIcons.containsKey(packageName)) return
-        val icon = ImageView(context)
-        icon.setImageDrawable(appIcon(packageName))
-        icon.contentDescription = label
+        // A cell = the app icon plus a small pill underneath marking it as running.
+        val icon = FrameLayout(context).apply {
+            background = cellBackground()
+            contentDescription = label
+            addView(
+                ImageView(context).apply { setImageDrawable(appIcon(packageName)) },
+                FrameLayout.LayoutParams(dp(RUNNING_ICON_DP), dp(RUNNING_ICON_DP), Gravity.CENTER),
+            )
+            addView(
+                View(context).apply {
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(2).toFloat()
+                        setColor(UxSpaceTheme.taskbarRunningIndicator)
+                    }
+                },
+                FrameLayout.LayoutParams(dp(12), dp(3), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+                    .apply { bottomMargin = dp(2) },
+            )
+        }
         val gestures = GestureDetector(
             context,
             object : GestureDetector.SimpleOnGestureListener() {
@@ -1024,10 +1084,14 @@ class DesktopPresentation(
             true
         }
         runningIcons[packageName] = icon
+        runningDivider?.visibility = View.VISIBLE
         runningLabels[packageName] = label
         runningApps.addView(
             icon,
-            LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginStart = dp(12) },
+            LinearLayout.LayoutParams(dp(TASKBAR_CELL_DP), dp(TASKBAR_CELL_DP)).apply {
+                marginStart = dp(2)
+                marginEnd = dp(2)
+            },
         )
         refreshWallpaperVisibility()
         refreshChrome()
@@ -1041,6 +1105,7 @@ class DesktopPresentation(
     private fun removeRunningApp(packageName: String) {
         if (!::runningApps.isInitialized) return
         runningIcons.remove(packageName)?.let { runningApps.removeView(it) }
+        if (runningIcons.isEmpty()) runningDivider?.visibility = View.GONE
         runningLabels.remove(packageName)
         refreshWallpaperVisibility()
         refreshChrome()
@@ -1168,7 +1233,16 @@ class DesktopPresentation(
         const val UNFOCUSED_CHROME_ALPHA = 0.55f
 
         /** Translucent white for the left-cluster divider — a quarter-strength rule line. */
-        const val DIVIDER_COLOR = 0x40FFFFFF
+        /**
+         * Taskbar geometry (dp). Height stays 58 dp because the renderer reserves that
+         * band below windows (`WorkspaceRenderer.WINDOW_TASKBAR_PX` = 58 dp at the slot's
+         * 200 dpi); change both together. Cells are a little larger than the desktop-mode
+         * reference so glyphs stay legible through the glasses' optics.
+         */
+        const val TASKBAR_HEIGHT_DP = 58
+        const val TASKBAR_CELL_DP = 46
+        const val TRAY_CELL_DP = 36
+        const val RUNNING_ICON_DP = 32
 
         // Drawer sizing. The effective screen is min(host px, baseline), then 60 % cap
         // per dim, aspect-preserved. So ultrawide / wider-than-baseline screens get
@@ -1176,8 +1250,8 @@ class DesktopPresentation(
         // real estate, per the design rule. Aspect 1400×920 ≈ 1.52:1.
         const val DRAWER_BASELINE_SCREEN_W = 1920
         const val DRAWER_BASELINE_SCREEN_H = 1080
-        const val DRAWER_SCREEN_FRACTION = 0.6f
-        const val DRAWER_ASPECT_W = 1400f
-        const val DRAWER_ASPECT_H = 920f
+        const val DRAWER_SCREEN_FRACTION = 0.74f
+        const val DRAWER_ASPECT_W = 870f
+        const val DRAWER_ASPECT_H = 800f
     }
 }

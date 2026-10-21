@@ -21,6 +21,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import com.uxspace.spatial.Layout
+import com.uxspace.spatial.UxSpaceTheme
 import com.uxspace.spatial.WorkspaceController
 import com.uxspace.spatial.WorkspaceRenderer.ViewMode
 
@@ -88,7 +89,7 @@ class SettingsView(context: Context) : LinearLayout(context) {
 
     init {
         orientation = VERTICAL
-        setBackgroundColor(PANEL_COLOR)
+        PanelStyle.applyCard(this)
         setPadding(dp(24), dp(20), dp(24), dp(20))
 
         val title = TextView(context).apply {
@@ -273,6 +274,7 @@ class SettingsView(context: Context) : LinearLayout(context) {
         }
         container.addView(sectionLabel(layout.displayName))
         val enable = CheckBox(context).apply {
+            PanelStyle.tintControl(this)
             text = "Enabled in unlocked-mode cycle"
             setTextColor(LABEL_COLOR)
             isChecked = WorkspaceSettings.layoutEnabledFor(layout)
@@ -305,6 +307,7 @@ class SettingsView(context: Context) : LinearLayout(context) {
             val current = WorkspaceSettings.mainScreenFor(layout)
             for (i in layout.screens.indices) {
                 val rb = RadioButton(context).apply {
+                    PanelStyle.tintControl(this)
                     text = mainScreenLabelFor(layout, i)
                     setTextColor(LABEL_COLOR)
                     id = View.generateViewId()
@@ -470,7 +473,7 @@ class SettingsView(context: Context) : LinearLayout(context) {
                         )
                     }
                 }.getOrNull()
-                if (bitmap != null) setImageBitmap(bitmap) else setBackgroundColor(0xFFD7D8DC.toInt())
+                if (bitmap != null) setImageBitmap(bitmap) else setBackgroundColor(UxSpaceTheme.panelPlaceholder)
             }
             addView(iv, FrameLayout.LayoutParams(MATCH, MATCH))
             setOnClickListener { onClick() }
@@ -484,7 +487,7 @@ class SettingsView(context: Context) : LinearLayout(context) {
             textSize = 11f
             setTextColor(LABEL_COLOR)
             typeface = Typeface.DEFAULT_BOLD
-            setBackgroundColor(0xFFD7D8DC.toInt())
+            setBackgroundColor(UxSpaceTheme.panelPlaceholder)
         }
         addView(
             label,
@@ -500,7 +503,7 @@ class SettingsView(context: Context) : LinearLayout(context) {
             cornerRadius = dp(8).toFloat()
             setStroke(
                 dp(if (active) 3 else 1),
-                if (active) PILL_ACTIVE_BG else 0xFF9A9CA3.toInt(),
+                if (active) PILL_ACTIVE_BG else UxSpaceTheme.controlTrack,
             )
         }
         view.foreground = ring
@@ -1038,6 +1041,7 @@ class SettingsView(context: Context) : LinearLayout(context) {
         }
         val span = max - min
         val seek = SeekBar(context).apply {
+            PanelStyle.tintSeek(this)
             this.max = 100
             progress = (((current - min) / span) * 100f).toInt().coerceIn(0, 100)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -1067,6 +1071,7 @@ class SettingsView(context: Context) : LinearLayout(context) {
         layoutParams = LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(4) }
         addView(
             CheckBox(context).apply {
+                PanelStyle.tintControl(this)
                 text = label
                 setTextColor(LABEL_COLOR)
                 isChecked = current
@@ -1084,14 +1089,13 @@ class SettingsView(context: Context) : LinearLayout(context) {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
 
-        const val PANEL_COLOR = 0xFFECEDEF.toInt()
-        const val TITLE_COLOR = 0xFF1A1B1F.toInt()
-        const val SECTION_LABEL = 0xFF6A6C73.toInt()
-        const val LABEL_COLOR = 0xFF33353B.toInt()
-        const val PILL_INACTIVE_BG = 0xFFDDDFE4.toInt()
-        const val PILL_ACTIVE_BG = 0xFF1A1B1F.toInt()
-        const val PILL_INACTIVE_FG = 0xFF3B3D43.toInt()
-        const val PILL_ACTIVE_FG = 0xFFFFFFFF.toInt()
+        const val TITLE_COLOR = UxSpaceTheme.panelTitle
+        const val SECTION_LABEL = UxSpaceTheme.panelSection
+        const val LABEL_COLOR = UxSpaceTheme.panelLabel
+        const val PILL_INACTIVE_BG = UxSpaceTheme.pillInactiveBg
+        const val PILL_ACTIVE_BG = UxSpaceTheme.pillActiveBg
+        const val PILL_INACTIVE_FG = UxSpaceTheme.pillInactiveFg
+        const val PILL_ACTIVE_FG = UxSpaceTheme.pillActiveFg
 
         /** Discrete "Screen fill" percentages offered in Settings → View. */
         val SCREEN_FILL_OPTIONS = intArrayOf(100, 95, 90, 85, 80)

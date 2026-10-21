@@ -16,6 +16,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import com.uxspace.R
+import com.uxspace.spatial.UxSpaceTheme
 import com.uxspace.spatial.WorkspaceController
 import com.uxspace.system.SystemStatus
 
@@ -54,7 +55,7 @@ class AudioPanelView(context: Context) : LinearLayout(context) {
 
     init {
         orientation = VERTICAL
-        setBackgroundColor(PANEL_COLOR)
+        PanelStyle.applyCard(this)
         setPadding(dp(24), dp(20), dp(24), dp(20))
 
         addView(
@@ -126,6 +127,7 @@ class AudioPanelView(context: Context) : LinearLayout(context) {
             LayoutParams(dp(20), dp(20)),
         )
         seek = SeekBar(context).apply {
+            PanelStyle.tintSeek(this)
             max = SEEK_MAX
             progress = (SystemStatus.volumeFraction * SEEK_MAX).toInt()
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -320,13 +322,12 @@ class AudioPanelView(context: Context) : LinearLayout(context) {
         const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
         const val SEEK_MAX = 100
 
-        const val PANEL_COLOR = 0xFFECEDEF.toInt()
-        const val TITLE_COLOR = 0xFF1A1B1F.toInt()
-        const val SECTION_LABEL = 0xFF6A6C73.toInt()
-        const val LABEL_COLOR = 0xFF33353B.toInt()
+        const val TITLE_COLOR = UxSpaceTheme.panelTitle
+        const val SECTION_LABEL = UxSpaceTheme.panelSection
+        const val LABEL_COLOR = UxSpaceTheme.panelLabel
 
-        const val INACTIVE_ROW_BG = 0xFFDDDFE4.toInt()
-        const val ACTIVE_ROW_BG = 0xFF1A1B1F.toInt()
-        const val ACTIVE_FG = 0xFFFFFFFF.toInt()
+        const val INACTIVE_ROW_BG = UxSpaceTheme.pillInactiveBg
+        const val ACTIVE_ROW_BG = UxSpaceTheme.pillActiveBg
+        const val ACTIVE_FG = UxSpaceTheme.pillActiveFg
     }
 }
