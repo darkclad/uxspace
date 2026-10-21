@@ -267,8 +267,12 @@ class MainActivity : ComponentActivity() {
         // The workspace cursor (rendered in the glasses) is the only cursor the
         // user looks at; the on-phone pointer is just noise once raw-evdev mouse
         // deltas drive the workspace from PrivilegedService.mouseDeltaHandler.
-        window.decorView.pointerIcon =
-            android.view.PointerIcon.getSystemIcon(this, android.view.PointerIcon.TYPE_NULL)
+        // Except on the emulator (docs/SIMULATOR.md): there, a middle-click hands the mouse back
+        // to Android to click this toolbar, so the pointer has to be visible.
+        if (!IS_EMULATOR) {
+            window.decorView.pointerIcon =
+                android.view.PointerIcon.getSystemIcon(this, android.view.PointerIcon.TYPE_NULL)
+        }
 
         // Sticky-immersive fullscreen — hide the status bar and navigation /
         // gesture bar. Two reasons:
@@ -1028,8 +1032,24 @@ class MainActivity : ComponentActivity() {
      * mouse click as a finger tap. Touchscreen events are passed through.
      */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (ev.isFromSource(InputDevice.SOURCE_MOUSE)) return true
+        if (ev.isFromSource(InputDevice.SOURCE_MOUSE)) {
+            // On the emulator a mouse only reaches Android after a middle-click released it
+            // (PrivilegedServer.HotkeyMonitor). It clicks the toolbar; a click on the
+            // trackpad hands it back to the workspace cursor.
+            if (!IS_EMULATOR) return true
+            if (isOverTrackpad(ev)) {
+                if (ev.actionMasked == MotionEvent.ACTION_DOWN) PrivilegedService.regrabPointers()
+                return true
+            }
+        }
         return super.dispatchTouchEvent(ev)
+    }
+
+    private fun isOverTrackpad(ev: MotionEvent): Boolean {
+        val loc = IntArray(2)
+        binding.trackpad.getLocationOnScreen(loc)
+        return ev.rawX >= loc[0] && ev.rawX < loc[0] + binding.trackpad.width &&
+            ev.rawY >= loc[1] && ev.rawY < loc[1] + binding.trackpad.height
     }
 
     private fun handleMouseEvent(ev: MotionEvent) {
@@ -1055,6 +1075,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
+        /** Android emulator — enables the simulator's middle-click mouse passthrough. */
+        val IS_EMULATOR = Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish"
+
         /** Settings preference key for the Wireless Debugging row in Developer Options. */
         const val WIRELESS_DEBUGGING_PREF_KEY = "toggle_adb_wireless"
 

@@ -89,4 +89,10 @@ interface IPrivilegedService {
      * Idempotent — silent no-op when no VITURE device is present.
      */
     void rescanGlassesUsb() = 15;
+
+    /**
+     * Emulator simulator only (docs/SIMULATOR.md): re-grab the pointer devices a middle-click
+     * handed back to Android. No-op when nothing was released or on real hardware.
+     */
+    void regrabPointers() = 16;
 }

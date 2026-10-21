@@ -93,14 +93,31 @@ FREE/layout buttons on the phone toolbar ungray, just like with real tracking.
 
 ### Mouse and keyboard
 
-- **Mouse:** click-drag on the emulator's main screen. That screen is the UxSpace
-  touchpad, so drag moves the cursor, tap clicks, hold grabs a window, and two
-  fingers scroll. Ctrl-drag in the emulator gives you two fingers.
-- **Keyboard:** type into the emulator window. Host keys arrive on the emulator's
-  `qwerty2` evdev device, which the privileged helper reads. Plain typing goes to
-  the drawer search box and Ctrl+Alt hotkeys work (A cycles the layout, X toggles
-  the view mode, = and - zoom). From a script, `adb emu event text chrome` takes
-  the same path.
+- **Mouse, captured (recommended):** start the emulator with a virtio relative
+  mouse:
+
+  ```bash
+  emulator -avd UxSpace_Sim -port 5580 -feature VirtioMouse,-VirtioTablet
+  ```
+
+  The guest then has a "QEMU Virtio Mouse" (REL_X/REL_Y). The privileged helper
+  classes it MOUSE and EVIOCGRABs it, exactly like a BT mouse on the phone. Click
+  inside any emulator window to capture the host mouse; it then drives the workspace
+  cursor, and the wheel scrolls. **Middle-click** to hand the mouse to the left
+  (phone) window. Android's pointer appears there, and you can click the toolbar
+  icons. **Click on the touchpad area** to give the mouse back to the workspace
+  cursor. This is emulator-only; on a phone the middle button is untouched. The
+  emulator gives the mouse back to Windows on **Ctrl+R**.
+- **Mouse, uncaptured:** without that flag, the host mouse arrives as touch.
+  Click-drag on the emulator's main screen. That screen is the UxSpace touchpad, so
+  drag moves the cursor, tap clicks, hold grabs a window, and two fingers scroll.
+  Ctrl-drag in the emulator gives you two fingers. The cursor hides when idle, so
+  drag a little before you click.
+- **Keyboard:** `adb emu event text chrome` types on the emulator's `qwerty2`
+  evdev device, which the privileged helper reads. Plain typing goes to the drawer
+  search box, and Ctrl+Alt hotkeys work (A cycles the layout, X toggles the view
+  mode, = and - zoom). While the emulator has the mouse captured, it swallows host
+  keystrokes, so use this path for typing.
 
 ### Scripting
 

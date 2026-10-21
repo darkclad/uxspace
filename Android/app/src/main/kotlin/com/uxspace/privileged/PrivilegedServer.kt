@@ -339,6 +339,11 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
         }
     }
 
+    /** Simulator: re-grab the mouse a middle-click released (HotkeyMonitor.setPointerPassthrough). */
+    override fun regrabPointers() {
+        hotkeyMonitor?.setPointerPassthrough(false)
+    }
+
     /**
      * Streamed touch injection: one [ACTION_DOWN] / [ACTION_MOVE] / [ACTION_UP] /
      * [ACTION_CANCEL] motion event at a time on the target display. The down timestamp
@@ -735,6 +740,21 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
         private val altHeld = AtomicBoolean(false)
         private val shiftHeld = AtomicBoolean(false)
         private val modsHeld = AtomicBoolean(false)
+
+        /**
+         * Emulator only (docs/SIMULATOR.md): a middle-click hands the grabbed mouse back to
+         * Android, so its own pointer can reach the phone-side toolbar; a mouse click on the
+         * trackpad takes it back via [regrabPointers]. (A key can't do this: the emulator's
+         * mouse capture swallows host keys.) Never on real hardware.
+         */
+        private val simPointerRelease = Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish"
+
+        /** Grabbed pointer devices, eventN → reader FD, for the passthrough above. */
+        private val grabbedPointers = java.util.concurrent.ConcurrentHashMap<String, FileInputStream>()
+
+        /** Pointers whose grab the passthrough dropped, re-opened (and re-grabbed) by [regrabPointers]. */
+        private val releasedPointers = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
         private var fileObserver: FileObserver? = null
 
         /** eventN → capability-based device class, from [classifyInputDevices]. */
@@ -818,6 +838,7 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
             // to the strategy-gated probe below. Keyboards are never grabbed (hotkeys only).
             if (cls == InputClass.MOUSE || cls == InputClass.TOUCHPAD) {
                 grabExclusive(fis, dev.name)
+                grabbedPointers[dev.name] = fis
             } else if (MOUSE_GRAB_STRATEGY == MouseGrabStrategy.SYSFS && isMouseDevice(dev.name)) {
                 grabExclusive(fis, dev.name)
             }
@@ -1216,7 +1237,31 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
                 Log.w(TAG, "hotkey: ${dev.name} reader error", t)
             } finally {
                 readers.remove(fis)
+                grabbedPointers.remove(dev.name, fis)
                 runCatching { fis.close() }
+            }
+        }
+
+        /**
+         * Simulator pointer passthrough ([simPointerRelease]). ioctlInt always hands EVIOCGRAB a
+         * non-null pointer, so there is no in-place ungrab: drop the grab by closing the
+         * pointer's reader FD, and restore it by re-opening through [spawnReader], which
+         * grabs again at open.
+         */
+        fun setPointerPassthrough(on: Boolean) {
+            if (!simPointerRelease) return
+            if (on) {
+                grabbedPointers.forEach { (name, fis) ->
+                    releasedPointers.add(name)
+                    runCatching { fis.close() }
+                }
+                Log.i(TAG, "hotkey: middle-click — pointer passthrough on (released $releasedPointers)")
+            } else {
+                if (releasedPointers.isEmpty()) return
+                val names = releasedPointers.toList()
+                releasedPointers.clear()
+                names.forEach { spawnReader(File(INPUT_DIR, it)) }
+                Log.i(TAG, "hotkey: pointer re-grabbed ($names)")
             }
         }
 
@@ -1296,6 +1341,10 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
                 return
             }
             if (type != EV_KEY) return
+            if (simPointerRelease && code == BTN_MIDDLE) {
+                if (value == 1) setPointerPassthrough(true)
+                return
+            }
             // Finger contact on a touchpad — brackets each stroke. On lift we drop the
             // baseline so the next touch starts fresh instead of teleporting the cursor.
             if (code == BTN_TOUCH) {

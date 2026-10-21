@@ -431,6 +431,9 @@ object PrivilegedService {
         }
     }
 
+    /** Simulator: take back the mouse a middle-click released (see PrivilegedServer). */
+    fun regrabPointers() = onWorker { service?.regrabPointers() }
+
     // region Privileged-call surface (mirrors ShizukuManager so UxSpaceApp swaps cleanly)
 
     fun launchApp(displayId: Int, packageName: String, activityName: String) {
