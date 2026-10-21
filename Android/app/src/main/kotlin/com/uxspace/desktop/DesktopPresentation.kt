@@ -22,6 +22,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.annotation.DrawableRes
 import com.uxspace.R
+import com.uxspace.apps.BuiltInApps
 import com.uxspace.spatial.UxSpaceTheme
 import com.uxspace.spatial.WorkspaceController
 import com.uxspace.system.NotificationCenter
@@ -267,7 +268,10 @@ class DesktopPresentation(
                     val y = pxY.toInt()
                     val left = if (x + menuW <= rootW) x else (x - menuW).coerceAtLeast(0)
                     val top = if (y + menuH <= rootH) y else (y - menuH).coerceAtLeast(0)
-                    val lp = FrameLayout.LayoutParams(WRAP, WRAP).apply {
+                    // Exact measured width: WRAP would let the group dividers (plain
+                    // Views, which take all of an AT_MOST width) stretch the card to
+                    // the slot's edge.
+                    val lp = FrameLayout.LayoutParams(menuW, WRAP).apply {
                         leftMargin = left.coerceAtMost((rootW - menuW).coerceAtLeast(0))
                         topMargin = top.coerceAtMost((rootH - menuH).coerceAtLeast(0))
                     }
@@ -587,6 +591,7 @@ class DesktopPresentation(
         WorkspaceController.addWindowBoundsListener(windowBoundsListener)
         WorkspaceController.addSnapPreviewListener(snapPreviewListener)
         WorkspaceController.addTaskbarHoverListener(taskbarHoverListener)
+        WorkspaceController.addTaskbarPointerListener(taskbarPointerListener)
         DesktopWallpaperStore.addChangeListener(wallpaperListener)
         WorkspaceSettings.addChangeListener(taskbarSettingsListener)
     }
@@ -602,6 +607,8 @@ class DesktopPresentation(
         WorkspaceController.removeWindowBoundsListener(windowBoundsListener)
         WorkspaceController.removeSnapPreviewListener(snapPreviewListener)
         WorkspaceController.removeTaskbarHoverListener(taskbarHoverListener)
+        WorkspaceController.removeTaskbarPointerListener(taskbarPointerListener)
+        mainHandler.removeCallbacks(showTooltipRunnable)
         DesktopWallpaperStore.removeChangeListener(wallpaperListener)
         WorkspaceSettings.removeChangeListener(taskbarSettingsListener)
         mainHandler.removeCallbacks(taskbarHideRunnable)
@@ -682,31 +689,47 @@ class DesktopPresentation(
      * whole view tree. The actual image is applied by [applyWallpaperSpec].
      */
     /**
-     * Build the desktop right-click context menu — a vertical list of action
-     * rows. Built fresh on every open so the FREE-only rows / taskbar toggle /
-     * "Lock vs Unlock" label all reflect current state. Each row dismisses the
-     * menu before running its action.
+     * Build the desktop right-click context menu — a dark card of action rows in
+     * groups (desktop, tools, view, UxSpace), DeX-style. Built fresh on every open so
+     * the FREE-only rows / taskbar toggle / "Lock vs Unlock" label all reflect current
+     * state. Each row dismisses the menu before running its action.
      */
     private fun buildContextMenu(): View {
         val container = android.widget.LinearLayout(context).apply {
             orientation = android.widget.LinearLayout.VERTICAL
-            setBackgroundColor(0xEE1C1E22.toInt())
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(MENU_CORNER_DP).toFloat()
+                setColor(UxSpaceTheme.panel)
+                setStroke(1, UxSpaceTheme.panelStroke)
+            }
+            clipToOutline = true
+            setPadding(dp(6), dp(6), dp(6), dp(6))
         }
         val pinned = WorkspaceController.currentViewMode ==
             com.uxspace.spatial.WorkspaceRenderer.ViewMode.PINNED
         val free = !pinned
         val dofUp = WorkspaceController.headTrackingActive
 
-        addContextMenuItem(container, "Arrange icons") {
-            DesktopShortcutsStore.arrange(currentDesktopIdx())
-        }
+        // Desktop
         addContextMenuItem(container, "Change wallpaper") {
             WorkspaceController.pickWallpaperFromDevice?.invoke(currentDesktopIdx())
         }
-        addContextMenuItem(container, "Settings") {
-            WorkspaceController.setSettingsOpen(true, slotIdx)
+        addContextMenuItem(container, "Arrange icons") {
+            DesktopShortcutsStore.arrange(currentDesktopIdx())
         }
+        addContextMenuItem(container, "Sort icons by name") {
+            DesktopShortcutsStore.arrange(currentDesktopIdx(), byName = true)
+        }
+        addContextMenuDivider(container)
+        // Tools
+        addContextMenuItem(container, "Show desktop") {
+            WorkspaceController.toggleShowDesktop()
+        }
+        addContextMenuItem(container, "Eye chart") {
+            BuiltInApps.launch(BuiltInApps.EYE_CHART, slotIdx)
+        }
+        addContextMenuDivider(container)
+        // View
         addContextMenuItem(container, "Cycle layout", enabled = free) {
             WorkspaceController.cycleLayout()
         }
@@ -728,13 +751,31 @@ class DesktopPresentation(
         addContextMenuItem(container, "Reset zoom") {
             WorkspaceController.resetWorkspaceZoom()
         }
+        addContextMenuDivider(container)
+        // UxSpace
         addContextMenuItem(
             container,
             if (WorkspaceSettings.showTaskbar()) "Hide taskbar" else "Show taskbar",
         ) {
             WorkspaceSettings.setShowTaskbar(!WorkspaceSettings.showTaskbar())
         }
+        addContextMenuItem(container, "Settings") {
+            WorkspaceController.setSettingsOpen(true, slotIdx)
+        }
         return container
+    }
+
+    /** Hairline between groups of context-menu rows. */
+    private fun addContextMenuDivider(parent: android.widget.LinearLayout) {
+        parent.addView(
+            View(context).apply { setBackgroundColor(UxSpaceTheme.panelStroke) },
+            android.widget.LinearLayout.LayoutParams(MATCH, 1).apply {
+                topMargin = dp(4)
+                bottomMargin = dp(4)
+                marginStart = dp(12)
+                marginEnd = dp(12)
+            },
+        )
     }
 
     private fun addContextMenuItem(
@@ -745,11 +786,12 @@ class DesktopPresentation(
     ) {
         val row = TextView(context).apply {
             text = label
-            textSize = 16f
-            setTextColor(if (enabled) 0xFFEAEAEA.toInt() else 0xFF888888.toInt())
+            textSize = 14f
+            setTextColor(if (enabled) UxSpaceTheme.panelLabel else UxSpaceTheme.panelSection)
             isClickable = enabled
             isFocusable = enabled
-            setPadding(dp(20), dp(12), dp(64), dp(12))
+            setPadding(dp(16), dp(9), dp(56), dp(9))
+            if (enabled) background = cellBackground()
             if (enabled) {
                 setOnClickListener {
                     // Close the menu first so the action lands on a clean
@@ -1322,9 +1364,95 @@ class DesktopPresentation(
         }
     }
 
+    // ── Taskbar tooltips (docs/DEX_FEATURES.md §5) ───────────────────────────────
+
+    /** Taskbar cell the cursor is resting on, and the tooltip shown for it. */
+    private var tooltipTarget: View? = null
+    private var tooltip: TextView? = null
+
+    private val showTooltipRunnable = Runnable { tooltipTarget?.let(::showTooltip) }
+
+    private val taskbarPointerListener: (Int, Int) -> Unit = { pointerSlot, xPx ->
+        if (pointerSlot == slotIdx) mainHandler.post { onTaskbarPointer(xPx) }
+    }
+
+    /**
+     * The cursor moved over the taskbar ([xPx] slot px) or left it (−1). A tooltip
+     * appears after [TOOLTIP_DELAY_MS] on the same cell, and goes as soon as the
+     * cursor moves to another cell or off the bar.
+     */
+    private fun onTaskbarPointer(xPx: Int) {
+        val bar = taskbarContainer
+        val cell = if (xPx < 0 || bar == null || bar.visibility != View.VISIBLE) {
+            null
+        } else {
+            cellAt(bar, xPx)
+        }
+        if (cell === tooltipTarget) return
+        tooltipTarget = cell
+        hideTooltip()
+        mainHandler.removeCallbacks(showTooltipRunnable)
+        if (cell != null) mainHandler.postDelayed(showTooltipRunnable, TOOLTIP_DELAY_MS)
+    }
+
+    /** The innermost labelled (contentDescription) visible view under slot-x [xPx]. */
+    private fun cellAt(view: View, xPx: Int): View? {
+        if (view.visibility != View.VISIBLE) return null
+        val loc = IntArray(2)
+        view.getLocationInWindow(loc)
+        if (xPx < loc[0] || xPx >= loc[0] + view.width) return null
+        if (view is ViewGroup) {
+            for (i in view.childCount - 1 downTo 0) {
+                cellAt(view.getChildAt(i), xPx)?.let { return it }
+            }
+        }
+        return view.takeIf { !it.contentDescription.isNullOrBlank() }
+    }
+
+    private fun showTooltip(cell: View) {
+        hideTooltip()
+        val label = TextView(context).apply {
+            text = cell.contentDescription
+            textSize = 12f
+            setTextColor(UxSpaceTheme.taskbarText)
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setColor(UxSpaceTheme.panel)
+                setStroke(1, UxSpaceTheme.panelStroke)
+            }
+        }
+        label.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val loc = IntArray(2)
+        cell.getLocationInWindow(loc)
+        val rootW = root.width
+        val left = (loc[0] + cell.width / 2 - label.measuredWidth / 2)
+            .coerceIn(dp(4), (rootW - label.measuredWidth - dp(4)).coerceAtLeast(dp(4)))
+        val barTop = root.height - dp(TASKBAR_HEIGHT_DP)
+        root.addView(
+            label,
+            FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START).apply {
+                leftMargin = left
+                topMargin = barTop - label.measuredHeight - dp(6)
+            },
+        )
+        tooltip = label
+    }
+
+    private fun hideTooltip() {
+        tooltip?.let { root.removeView(it) }
+        tooltip = null
+    }
+
     private companion object {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
+
+        /** Corner radius of the desktop right-click menu card. */
+        const val MENU_CORNER_DP = 12
+
+        /** Cursor dwell on a taskbar cell before its tooltip shows. */
+        const val TOOLTIP_DELAY_MS = 600L
 
         const val VOID_COLOR = 0xFF0E1018.toInt()
         const val CLOCK_INTERVAL_MS = 20_000L

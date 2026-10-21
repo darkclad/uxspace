@@ -37,7 +37,7 @@ The navigation trio, as on Android desktop modes: **Recents**, **Home**, **Back*
 | Item | Action |
 |---|---|
 | Recents (`ic_nav_recents`) | Opens the drawer on its **Recent** tab — apps recently opened **in the workspace** (Android's system recents API is not available to apps, so "recent" means UxSpace's own launch history, `WorkspaceController.recentApps`). |
-| Home (`ic_nav_home`) | Minimises every open window; a second tap restores them — `WorkspaceController.toggleShowDesktop()`. |
+| Home (`ic_nav_home`) | Show desktop, as on DeX: minimises every visible window (apps keep running); a second tap restores the ones it hid — `WorkspaceController.toggleShowDesktop()`, also Ctrl+Alt+D. |
 | Back (`ic_nav_back`) | Closes a panel (drawer, Settings, Audio) open on this screen; otherwise sends Back to this screen's focused window (`WorkspaceController.sendBackToApp`), which closes the window once its activity stack empties. |
 
 ## Centre cluster
@@ -53,6 +53,12 @@ icon per running app window with a small indicator pill under it.
 
 Built-in tools such as the [eye chart](OPTOMETRY.md) live in the drawer as synthetic
 entries (`BuiltInApps`), not on the taskbar.
+
+**Tooltips.** Resting the cursor on any labelled taskbar cell for 600 ms shows its name
+(the cell's `contentDescription`) in a small dark pill above the bar; moving to another
+cell or off the bar hides it. The renderer reports the cursor's x over the bar
+(`WorkspaceController.notifyTaskbarPointer`, in 8 px columns, on change only) and the
+slot's `DesktopPresentation` finds the cell under it.
 
 ---
 

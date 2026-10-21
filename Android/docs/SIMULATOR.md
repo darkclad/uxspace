@@ -176,6 +176,8 @@ python tools/simulator/uxsim.py send pose 30 -10
 | `click`, `rclick`, `scroll <dy>` | Pointer actions |
 | `pair <code>` | Pair the helper with a Wireless debugging code |
 | `state` | The privileged helper's state (`READY` when up) |
+| `launch <package>` | Open an app as a workspace window (also `uxspace.builtin.eyechart`) |
+| `hotkey <name>` | Fire a Ctrl+Alt hotkey by its `PrivilegedHotkeys.HK_<name>` suffix, e.g. `hotkey tile_left`. The emulator console can't inject Ctrl+Alt combos as kernel input, so this feeds the app the code the helper would send. |
 
 To capture what the fake glasses show, find the display's SurfaceFlinger ID, then
 pass it to `screencap`:

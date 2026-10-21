@@ -1411,6 +1411,21 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
                             KEY_C -> PrivilegedHotkeys.HK_ANCHOR_POSE
                             KEY_EQUAL, KEY_KPPLUS -> PrivilegedHotkeys.HK_ZOOM_IN
                             KEY_MINUS, KEY_KPMINUS -> PrivilegedHotkeys.HK_ZOOM_OUT
+                            KEY_LEFT -> if (shiftHeld.get()) {
+                                PrivilegedHotkeys.HK_MOVE_PREV_SCREEN
+                            } else {
+                                PrivilegedHotkeys.HK_TILE_LEFT
+                            }
+                            KEY_RIGHT -> if (shiftHeld.get()) {
+                                PrivilegedHotkeys.HK_MOVE_NEXT_SCREEN
+                            } else {
+                                PrivilegedHotkeys.HK_TILE_RIGHT
+                            }
+                            KEY_UP -> PrivilegedHotkeys.HK_MAXIMIZE
+                            KEY_DOWN -> PrivilegedHotkeys.HK_RESTORE_DOWN
+                            KEY_Q -> PrivilegedHotkeys.HK_CLOSE_WINDOW
+                            KEY_D -> PrivilegedHotkeys.HK_SHOW_DESKTOP
+                            KEY_SPACE -> PrivilegedHotkeys.HK_OPEN_DRAWER
                             else -> return
                         }
                         try {
@@ -1508,6 +1523,13 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
             private const val KEY_Z = 44
             private const val KEY_X = 45
             private const val KEY_C = 46
+            private const val KEY_D = 32
+            private const val KEY_Q = 16
+            private const val KEY_SPACE = 57
+            private const val KEY_UP = 103
+            private const val KEY_LEFT = 105
+            private const val KEY_RIGHT = 106
+            private const val KEY_DOWN = 108
             private const val KEY_LEFTSHIFT = 42
             private const val KEY_RIGHTSHIFT = 54
             private const val KEY_LEFTALT = 56

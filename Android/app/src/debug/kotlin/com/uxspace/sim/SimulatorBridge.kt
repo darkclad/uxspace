@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.uxspace.apps.BuiltInApps
+import com.uxspace.privileged.PrivilegedHotkeys
 import com.uxspace.privileged.PrivilegedService
 import com.uxspace.spatial.WorkspaceController
 import com.uxspace.spatial.WorkspaceRenderer
@@ -41,6 +42,8 @@ import kotlin.math.sin
  *  - `panel drawer|settings|audio|notifications|quick|close` — open a desktop panel on the
  *    main screen.
  *  - `launch <package>` — open an app's launcher activity as a workspace window.
+ *  - `hotkey <name>` — fire a Ctrl+Alt hotkey as the helper would, by its
+ *    `PrivilegedHotkeys.HK_<name>` suffix (e.g. `hotkey tile_left`).
  *  - `move <dx> <dy>` — cursor delta as a fraction of the touchpad (like a trackpad swipe).
  *  - `click`, `rclick`, `scroll <dy>`.
  *  - `pair <code>` — the Wireless debugging pairing code, as if typed into the pairing
@@ -246,6 +249,15 @@ class SimulatorBridge : ContentProvider() {
                     else -> return "err usage: panel drawer|settings|audio|notifications|quick|close"
                 }
                 main.post(open)
+            }
+            "hotkey" -> {
+                // The emulator console can't inject Ctrl+Alt combos as kernel input, so
+                // feed the app-side handler the code the helper would send.
+                val name = args.getOrNull(1)?.uppercase() ?: return "err usage: hotkey <name>"
+                val code = runCatching {
+                    PrivilegedHotkeys::class.java.getField("HK_$name").getInt(null)
+                }.getOrNull() ?: return "err unknown hotkey HK_$name"
+                main.post { PrivilegedService.hotkeyHandler?.invoke(code) }
             }
             "launch" -> {
                 val pkg = args.getOrNull(1) ?: return "err usage: launch <package>"

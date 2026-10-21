@@ -130,13 +130,15 @@ object DesktopShortcutsStore {
     /**
      * Re-flow every shortcut on [desktopIdx] into a clean grid — left-to-right,
      * top-to-bottom, with even fractional spacing. Stable order preserved (the
-     * existing list order maps to grid cells). The grid is sized so that a
+     * existing list order maps to grid cells), or alphabetical by label when
+     * [byName] is set. The grid is sized so that a
      * reasonable number of icons (≤ 8 cols, ≤ 6 rows) fit edge-to-edge with a
      * margin on each side. Beyond 48 icons new ones wrap to the next column.
      */
-    fun arrange(desktopIdx: Int) {
+    fun arrange(desktopIdx: Int, byName: Boolean = false) {
         if (!::prefs.isInitialized) return
         val current = shortcutsFor(desktopIdx)
+            .let { list -> if (byName) list.sortedBy { it.label.lowercase() } else list }
         if (current.isEmpty()) return
         val cols = ARRANGE_COLS
         val rows = ARRANGE_ROWS

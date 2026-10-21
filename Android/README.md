@@ -349,6 +349,13 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
    | `Ctrl+Alt + scroll`  | Workspace zoom                    |
    | `Ctrl+Alt + drag`    | Pan zoomed viewport (PINNED)      |
    | `Ctrl+Alt` held      | Keymap legend overlay             |
+   | `Ctrl+Alt+←` / `→`   | Tile focused window left / right (again: restore) |
+   | `Ctrl+Alt+↑`         | Maximize focused window           |
+   | `Ctrl+Alt+↓`         | Restore, then minimize            |
+   | `Ctrl+Alt+Shift+←`/`→` | Move focused window to prev / next screen |
+   | `Ctrl+Alt+Q`         | Close focused window              |
+   | `Ctrl+Alt+D`         | Show desktop (minimize all / restore) |
+   | `Ctrl+Alt+Space`     | App drawer on the screen under the cursor |
 
    Samsung's One UI launcher intercepts `Meta` — that is why UxSpace uses `Ctrl+Alt`
    on both Android and Windows.

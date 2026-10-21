@@ -613,6 +613,26 @@ object WorkspaceController {
     }
 
     /**
+     * Cursor x over a slot's taskbar band (slot px, in coarse columns), or −1 when the
+     * cursor leaves it. Fires from the renderer's GL thread on change only. Drives the
+     * taskbar's hover tooltips.
+     */
+    private val taskbarPointerListeners =
+        java.util.concurrent.CopyOnWriteArrayList<(slotIdx: Int, xPx: Int) -> Unit>()
+
+    fun addTaskbarPointerListener(listener: (slotIdx: Int, xPx: Int) -> Unit) {
+        taskbarPointerListeners.add(listener)
+    }
+
+    fun removeTaskbarPointerListener(listener: (slotIdx: Int, xPx: Int) -> Unit) {
+        taskbarPointerListeners.remove(listener)
+    }
+
+    internal fun notifyTaskbarPointer(slotIdx: Int, xPx: Int) {
+        taskbarPointerListeners.forEach { runCatching { it(slotIdx, xPx) } }
+    }
+
+    /**
      * Bounds of the modal panel (drawer or settings) inside a slot, in slot-local
      * pixels. The drawer + settings panels share the same centred size, so a single
      * payload covers both — the renderer uses it to sample the slot's Presentation
@@ -887,6 +907,37 @@ object WorkspaceController {
      */
     fun toggleShowDesktop() {
         renderer?.toggleShowDesktop()
+    }
+
+    /** Keyboard window actions (docs/DEX_FEATURES.md §3), applied to the focused window. */
+    enum class WindowCommand {
+        /** Tile to the left half; again restores. */
+        TILE_LEFT,
+
+        /** Tile to the right half; again restores. */
+        TILE_RIGHT,
+
+        /** Maximize (from normal or tiled). */
+        MAXIMIZE,
+
+        /** Maximized / fullscreen / tiled → normal; normal → minimized. */
+        RESTORE_DOWN,
+        MOVE_PREV_SCREEN,
+        MOVE_NEXT_SCREEN,
+        CLOSE,
+    }
+
+    /**
+     * Apply [command] to the focused window: the topmost visible one, i.e. the last
+     * window raised on any screen. No-op when no window is visible.
+     */
+    fun windowCommand(command: WindowCommand) {
+        renderer?.windowCommand(command)
+    }
+
+    /** Open the app drawer on the screen under the cursor (screen 0 if it's off-screen). */
+    fun openDrawerUnderCursor() {
+        renderer?.openDrawerUnderCursor()
     }
 
     /**

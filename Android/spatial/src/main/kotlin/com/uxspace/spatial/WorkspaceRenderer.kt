@@ -815,6 +815,21 @@ class WorkspaceRenderer(
     private fun taskbarHoverPrev(slotIdx: Int): Boolean =
         slotIdx < taskbarHoverPrevArr.size && taskbarHoverPrevArr[slotIdx]
 
+    /** Last taskbar pointer column sent per slot (−1 = not over the bar). GL thread. */
+    private var taskbarPointerPrevArr: IntArray = IntArray(0)
+
+    private fun taskbarPointerPrev(slotIdx: Int): Int =
+        if (slotIdx < taskbarPointerPrevArr.size) taskbarPointerPrevArr[slotIdx] else -1
+
+    private fun setTaskbarPointerPrev(slotIdx: Int, value: Int) {
+        if (slotIdx >= taskbarPointerPrevArr.size) {
+            val grown = IntArray((slotIdx + 1).coerceAtLeast(4)) { -1 }
+            taskbarPointerPrevArr.copyInto(grown)
+            taskbarPointerPrevArr = grown
+        }
+        taskbarPointerPrevArr[slotIdx] = value
+    }
+
     private fun setTaskbarHoverPrev(slotIdx: Int, value: Boolean) {
         if (slotIdx >= taskbarHoverPrevArr.size) {
             taskbarHoverPrevArr = taskbarHoverPrevArr.copyOf((slotIdx + 1).coerceAtLeast(4))
@@ -1018,6 +1033,19 @@ class WorkspaceRenderer(
             if (hovering != taskbarHoverPrev(i)) {
                 setTaskbarHoverPrev(i, hovering)
                 WorkspaceController.notifyTaskbarHover(i, hovering)
+            }
+            // Taskbar tooltips: the cursor's x while it's over the bar itself, in
+            // TASKBAR_POINTER_STEP_PX columns so the slot hears a change, not every frame.
+            val barX = if (cursorPx != null &&
+                cursorPx[1] >= screen.contentHeightPx - WINDOW_TASKBAR_PX
+            ) {
+                cursorPx[0].toInt() / TASKBAR_POINTER_STEP_PX * TASKBAR_POINTER_STEP_PX
+            } else {
+                -1
+            }
+            if (barX != taskbarPointerPrev(i)) {
+                setTaskbarPointerPrev(i, barX)
+                WorkspaceController.notifyTaskbarPointer(i, barX)
             }
         }
 
@@ -1607,20 +1635,87 @@ class WorkspaceRenderer(
     }
 
     /**
-     * Show-desktop toggle. In the per-screen model "show desktop" means closing any apps
-     * stacked on the screens so the per-screen DesktopPresentation (wallpaper) is
-     * visible again. Any thread.
+     * Windows hidden by the last [toggleShowDesktop], so the next press restores exactly
+     * those. GL-thread only.
+     */
+    private val hiddenByShowDesktop = mutableSetOf<String>()
+
+    /**
+     * Show-desktop toggle (taskbar Home, Ctrl+Alt+D), as on DeX: if any window is
+     * visible, minimise every visible window; otherwise restore the ones the previous
+     * press hid. Apps keep running either way. Any thread.
      */
     fun toggleShowDesktop() {
         glTasks.add {
-            if (currentScreenApps.isEmpty()) return@add
-            val pkgs = currentScreenApps.values.map { it.packageName }
-            val slotsWithWindow = runningWindows.map { it.slotIdx }.toSet()
-            currentScreenApps.clear()
-            runningWindows.forEach { it.release() }
-            runningWindows.clear()
-            pkgs.forEach { closeAndNotify(it) }
-            slotsWithWindow.forEach { notifyWindowBoundsForSlot(it) }
+            val visible = runningWindows.filter { !it.minimized }
+            if (visible.isNotEmpty()) {
+                hiddenByShowDesktop.clear()
+                visible.forEach { window ->
+                    window.minimized = true
+                    hiddenByShowDesktop.add(window.packageName)
+                    window.displayId?.let { id -> WorkspaceController.appMediaPause?.invoke(id) }
+                }
+                visible.map { it.slotIdx }.toSet().forEach { notifyWindowBoundsForSlot(it) }
+            } else {
+                val restored = runningWindows.filter { it.packageName in hiddenByShowDesktop }
+                hiddenByShowDesktop.clear()
+                restored.forEach { it.minimized = false }
+                restored.map { it.slotIdx }.toSet().forEach { notifyWindowBoundsForSlot(it) }
+            }
+        }
+    }
+
+    /**
+     * Apply a keyboard window action to the focused window: the last visible window in
+     * [runningWindows], i.e. the most recently raised on any screen. Any thread.
+     */
+    fun windowCommand(command: WorkspaceController.WindowCommand) {
+        glTasks.add {
+            val window = runningWindows.lastOrNull { !it.minimized } ?: return@add
+            val pkg = window.packageName
+            val slot = layout.screens.getOrNull(window.slotIdx) ?: return@add
+            fun setMode(mode: WorkspaceController.WindowMode) {
+                window.setState(mode, slot.contentWidthPx, slot.contentHeightPx, WINDOW_TASKBAR_PX)
+                notifyWindowBoundsForSlot(window.slotIdx)
+            }
+            val normal = WorkspaceController.WindowMode.NORMAL
+            when (command) {
+                WorkspaceController.WindowCommand.TILE_LEFT -> setMode(
+                    if (window.mode == WorkspaceController.WindowMode.TILED_LEFT) normal
+                    else WorkspaceController.WindowMode.TILED_LEFT,
+                )
+                WorkspaceController.WindowCommand.TILE_RIGHT -> setMode(
+                    if (window.mode == WorkspaceController.WindowMode.TILED_RIGHT) normal
+                    else WorkspaceController.WindowMode.TILED_RIGHT,
+                )
+                WorkspaceController.WindowCommand.MAXIMIZE ->
+                    if (window.mode != WorkspaceController.WindowMode.FULLSCREEN) {
+                        setMode(WorkspaceController.WindowMode.MAXIMIZED)
+                    }
+                WorkspaceController.WindowCommand.RESTORE_DOWN ->
+                    if (window.mode == normal) minimizeWindow(pkg) else setMode(normal)
+                WorkspaceController.WindowCommand.MOVE_PREV_SCREEN,
+                WorkspaceController.WindowCommand.MOVE_NEXT_SCREEN -> {
+                    val n = layout.screens.size
+                    if (n < 2) return@add
+                    val step = if (command == WorkspaceController.WindowCommand.MOVE_NEXT_SCREEN) 1 else -1
+                    moveWindowToSlot(window, (window.slotIdx + step + n) % n)
+                }
+                WorkspaceController.WindowCommand.CLOSE ->
+                    mainHandler.post { WorkspaceController.closeAppByPackage(pkg) }
+            }
+            Log.i(TAG, "windowCommand $command -> $pkg mode=${window.mode}")
+        }
+    }
+
+    /** Open the drawer on the screen under the cursor, or screen 0 if none. Any thread. */
+    fun openDrawerUnderCursor() {
+        glTasks.add {
+            val screenIdx = screenIndexUnderCursor() ?: 0
+            mainHandler.post {
+                WorkspaceController.setDrawerMode(WorkspaceController.DrawerMode.ALL)
+                WorkspaceController.setDrawerOpen(true, screenIdx)
+            }
         }
     }
 
@@ -3240,11 +3335,14 @@ class WorkspaceRenderer(
             textSize = 52f
         }
         canvas.drawText("Ctrl+Alt+...", 40f, 84f, titlePaint)
-        var y = 164f
-        for ((k, v) in LEGEND_ROWS) {
-            canvas.drawText(k, 40f, y, keyPaint)
-            canvas.drawText(v, 480f, y, descPaint)
-            y += 68f
+        // Two columns: workspace keys on the left, window keys on the right.
+        listOf(LEGEND_ROWS to 40f, LEGEND_WINDOW_ROWS to w / 2f + 20f).forEach { (rows, x) ->
+            var y = 164f
+            for ((k, v) in rows) {
+                canvas.drawText(k, x, y, keyPaint)
+                canvas.drawText(v, x + 400f, y, descPaint)
+                y += 64f
+            }
         }
         val ids = IntArray(1)
         GLES20.glGenTextures(1, ids, 0)
@@ -3918,16 +4016,27 @@ class WorkspaceRenderer(
         // Legend overlay — bottom-left translucent card listing Ctrl+Alt+X hotkeys
         // while Ctrl+Alt is held. Sized in NDC so the placement stays put across
         // surface resolutions; the texture aspect is preserved at draw time.
-        const val LEGEND_CX = -0.40f
+        const val LEGEND_CX = 0f
         const val LEGEND_CY = -0.40f
         const val LEGEND_HALF_H = 0.44f
-        const val LEGEND_BITMAP_W = 1440
+        const val LEGEND_BITMAP_W = 2560
         const val LEGEND_BITMAP_H = 760
         // Layout announcement — translucent "Layout name" pill at the bottom of the
         // view for 2 s after a layout switch. Sized like the legend but smaller.
         const val LAYOUT_ANNOUNCE_CX = 0f
         const val LAYOUT_ANNOUNCE_CY = -0.75f
         const val LAYOUT_ANNOUNCE_HALF_H = 0.06f
+
+        /** Ctrl+Alt window shortcuts (docs/DEX_FEATURES.md §3), the legend's right column. */
+        val LEGEND_WINDOW_ROWS: List<Pair<String, String>> = listOf(
+            "← / →" to "Tile left / right",
+            "↑" to "Maximize",
+            "↓" to "Restore, then minimize",
+            "Shift+← / →" to "Move to prev / next screen",
+            "Q" to "Close window",
+            "D" to "Show desktop",
+            "Space" to "App drawer",
+        )
 
         val LEGEND_ROWS: List<Pair<String, String>> = listOf(
             "Wheel" to "Zoom",
@@ -3985,6 +4094,9 @@ class WorkspaceRenderer(
          * itself, giving the slide-in a moment to play.
          */
         const val TASKBAR_HOVER_ZONE_PX = 200
+
+        /** Column width (slot px) for the taskbar pointer events behind tooltips. */
+        const val TASKBAR_POINTER_STEP_PX = 8
 
         /**
          * Slack (slot-local px) added around the FULLSCREEN chrome toolbar's

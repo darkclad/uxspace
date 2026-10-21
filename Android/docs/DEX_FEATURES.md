@@ -83,7 +83,11 @@ long-press), Maximize.
   Presentation instead of the desktop context menu).
 - **Effort:** medium (the dock mirroring adds a launcher-specific parser).
 
-## 3. Keyboard window shortcuts
+## 3. Keyboard window shortcuts — done
+
+Built as planned; the legend overlay (Ctrl+Alt held) gained a second column for them.
+Show desktop (Ctrl+Alt+D and the taskbar's Home) now minimizes and restores, as on
+DeX, instead of closing every app.
 
 **DeX:** Win+arrows snap left/right and maximize/restore, Win+D shows the desktop,
 Alt+F4 closes, Win opens the app drawer.
@@ -119,7 +123,9 @@ any rect.
   Ctrl+Alt arrow shortcuts from 3 (← then ↑ = top-left).
 - **Effort:** small–medium (every `when (mode)` needs the new cases).
 
-## 5. Hover tooltips on taskbar icons
+## 5. Hover tooltips on taskbar icons — done
+
+Built as planned (see [TASKBAR.md](TASKBAR.md#centre-cluster), "Tooltips").
 
 **DeX:** resting the pointer on a taskbar icon shows the app's name.
 
@@ -134,7 +140,11 @@ alike at glasses resolution.
   listener, `DesktopPresentation` (tooltip view above the taskbar).
 - **Effort:** small.
 
-## 6. Desktop right-click menu entries
+## 6. Desktop right-click menu entries — done
+
+The menu is now a dark card in groups (desktop · tools · view · UxSpace) with Change
+wallpaper, Arrange icons, **Sort icons by name**, **Show desktop**, **Eye chart**, the
+view toggles, Hide taskbar and Settings. "New folder" waits for 7.
 
 **DeX:** the desktop menu offers wallpaper, display settings, new folder and sort icons.
 

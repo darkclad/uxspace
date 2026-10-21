@@ -15,6 +15,16 @@ package com.uxspace.privileged
  *  - Ctrl+Alt+R         → [HK_SDK_RECENTER]       → `NativeGlasses.resetOriginCarina()`
  *  - Ctrl+Alt+C         → [HK_ANCHOR_POSE]        → `WorkspaceController.alignVerticalToHead()`
  *
+ * Window shortcuts (docs/DEX_FEATURES.md §3), acting on the focused window:
+ *
+ *  - Ctrl+Alt+← / →          → [HK_TILE_LEFT] / [HK_TILE_RIGHT]   (again: restore)
+ *  - Ctrl+Alt+↑              → [HK_MAXIMIZE]
+ *  - Ctrl+Alt+↓              → [HK_RESTORE_DOWN]  (maximized/tiled → normal → minimized)
+ *  - Ctrl+Alt+Shift+← / →    → [HK_MOVE_PREV_SCREEN] / [HK_MOVE_NEXT_SCREEN]
+ *  - Ctrl+Alt+Q              → [HK_CLOSE_WINDOW]
+ *  - Ctrl+Alt+D              → [HK_SHOW_DESKTOP]  (the taskbar's Home)
+ *  - Ctrl+Alt+Space          → [HK_OPEN_DRAWER]   (on the screen under the cursor)
+ *
  * Ctrl+Alt+Wheel is handled in `MainActivity.dispatchGenericMotionEvent` directly — the
  * keyboard modifier state rides on the MotionEvent, so the activity sees it without needing
  * the privileged spy.
@@ -43,4 +53,14 @@ object PrivilegedHotkeys {
     /** Cycle FREE-mode layout (SINGLE → VHV → … ). No-op in PINNED. Android-only —
      *  the Windows companion has no equivalent "scene layout" concept. */
     const val HK_CYCLE_LAYOUT = 9
+
+    const val HK_TILE_LEFT = 10
+    const val HK_TILE_RIGHT = 11
+    const val HK_MAXIMIZE = 12
+    const val HK_RESTORE_DOWN = 13
+    const val HK_MOVE_PREV_SCREEN = 14
+    const val HK_MOVE_NEXT_SCREEN = 15
+    const val HK_CLOSE_WINDOW = 16
+    const val HK_SHOW_DESKTOP = 17
+    const val HK_OPEN_DRAWER = 18
 }

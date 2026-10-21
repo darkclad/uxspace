@@ -302,6 +302,22 @@ class UxSpaceApp : Application() {
                     val next = WorkspaceController.cycleLayout()
                     Log.i(HOTKEY_TAG, "Ctrl+Alt+A (cycle layout -> $next)")
                 }
+                PrivilegedHotkeys.HK_TILE_LEFT ->
+                    WorkspaceController.windowCommand(WorkspaceController.WindowCommand.TILE_LEFT)
+                PrivilegedHotkeys.HK_TILE_RIGHT ->
+                    WorkspaceController.windowCommand(WorkspaceController.WindowCommand.TILE_RIGHT)
+                PrivilegedHotkeys.HK_MAXIMIZE ->
+                    WorkspaceController.windowCommand(WorkspaceController.WindowCommand.MAXIMIZE)
+                PrivilegedHotkeys.HK_RESTORE_DOWN ->
+                    WorkspaceController.windowCommand(WorkspaceController.WindowCommand.RESTORE_DOWN)
+                PrivilegedHotkeys.HK_MOVE_PREV_SCREEN ->
+                    WorkspaceController.windowCommand(WorkspaceController.WindowCommand.MOVE_PREV_SCREEN)
+                PrivilegedHotkeys.HK_MOVE_NEXT_SCREEN ->
+                    WorkspaceController.windowCommand(WorkspaceController.WindowCommand.MOVE_NEXT_SCREEN)
+                PrivilegedHotkeys.HK_CLOSE_WINDOW ->
+                    WorkspaceController.windowCommand(WorkspaceController.WindowCommand.CLOSE)
+                PrivilegedHotkeys.HK_SHOW_DESKTOP -> WorkspaceController.toggleShowDesktop()
+                PrivilegedHotkeys.HK_OPEN_DRAWER -> WorkspaceController.openDrawerUnderCursor()
                 PrivilegedHotkeys.HK_MODIFIERS_DOWN -> {
                     WorkspaceController.legendVisible = true
                 }
