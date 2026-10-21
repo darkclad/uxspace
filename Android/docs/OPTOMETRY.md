@@ -25,44 +25,44 @@ dismisses it.
 
 ## The chart
 
-A **Snellen chart** is the canonical choice — 8–11 rows of black sans-serif letters on
-white, each row roughly half the height of the row above. It's the chart VITURE's own setup
-videos use and what most users already recognise. Five to six letters per row drawn from
-the standard Snellen set (E, F, P, T, O, Z, L, P, E, D, …) at the standard size ratios
-(20/200, 20/100, 20/70, 20/50, 20/40, 20/30, 20/20, 20/15, 20/10).
+A focus-calibration ladder, not a vision test: **20/40 down to 20/10 in 0.1 logMAR
+steps** (20/40, 20/32, 20/25, 20/20, 20/16, 20/12.5, 20/10; each row ≈ 1.26× the next),
+five Sloan letters per row (C D H K N O R S V Z, no repeats in a row), fresh letters every
+time the chart opens. Big rows (20/200 …) are left out on purpose.
 
-A second mode for non-Latin readers: the **Landolt C** (rings with a gap) or **Tumbling E**
-(rotated Es) — same size progression, the user just judges sharpness of the orientation
-rather than recognising a letter. Implemented as a toggle in a small corner; default is
-Snellen.
+**Sizes are relative.** A true 20/20 letter subtends 5 arcmin; at the glasses' ~44 px per
+degree that is ~4 px, and 20/10 ~2 px, below what the panel can draw legibly. So the
+20/10 row is anchored at the pixel floor (`EyeChartView.MIN_LETTER_PX`, 9 px) and the other
+rows scale up by the standard ratios. The point is to find the wheel position where the
+smallest rows go crisp, which this preserves.
 
-## Per-eye masking
+A **Tumbling E** mode (rotated Es, same ladder) is a corner toggle for readers who'd rather
+judge orientation than recognise letters. Default is letters.
 
-VITURE glasses present a side-by-side stereo image on a single panel — the left half goes
-to the left eye, the right half to the right eye. To adjust one eye at a time without
-asking the user to close the other one, the chart can blank the opposite half:
+The taskbar stays visible above the chart so its **Back** closes it; the chart's own `×`
+does too.
 
-- **Both eyes** (default) — chart spans the workspace.
-- **Left eye only** — right half of the workspace blanked black.
-- **Right eye only** — left half blanked.
+## Per-eye masking (not built)
 
-A small toggle in the corner cycles through the three modes.
+UxSpace renders **one mono image** that the glasses mirror to both eyes, so blanking half
+of the workspace blanks it for both eyes, not one. Real per-eye masking needs the glasses
+switched into their 3D side-by-side mode (`VITURE_DISPLAY_MODE_3840_1200_*`, left half →
+left eye) while the chart is open, with the chart drawn into one half. That's a display-mode
+change only testable on hardware. Until then the chart tells the user to cover one eye.
 
-## Implementation sketch
+## Implementation
 
-- New `OptometryPresentation : Presentation` on a `UiScreen` created and shown by
-  `WorkspaceRenderer` when the drawer entry is launched — mirrors the drawer's lifecycle
-  (`WorkspaceController.setDrawerOpen` → renderer toggles overlay).
-- Drawn full-bleed over the desktop and any windows (skip the windows in the renderer's
-  draw loop when the overlay is open, same as the drawer's scrim handles the wallpaper).
-- View hierarchy: a `LinearLayout` with the row of letters, plus a small bottom-right
-  panel with the chart-style toggle, the eye-mask toggle, and a close `×`.
-- Drawing the letters with vector fonts (`Theme.DeviceDefault`) is enough — the
-  acuity-row sizes are computed from row height in dp.
-
-**Touch points.** New `OptometryPresentation` + a `UiScreen` like the drawer's; a
-`WorkspaceController.setOptometryOpen(open)` hook and the renderer's overlay-draw branch;
-`BuiltInApps.launch` (today a "coming soon" toast) calls `setOptometryOpen(true)`.
+- `EyeChartView` is a full-size child of the slot's `DesktopPresentation`, under the
+  taskbar and above everything else. It draws the rows on a canvas (letters centred on
+  their ink bounds so rotated Es pivot correctly), with `×` top-right and the
+  chart-style toggle bottom-right, clear of the taskbar band.
+- `WorkspaceController.setOptometryOpen(open, screenIdx)` holds the state (closing any
+  other panel); `DesktopPresentation` shows the view on that screen and reshuffles it.
+- `WorkspaceRenderer` treats the whole slot as the modal rect while the chart is open:
+  it re-draws the slot surface over the windows on that screen and routes clicks,
+  scrolls, right-clicks and drags to the chart instead of anything under it.
+- `BuiltInApps.launch(EYE_CHART, screen)` opens it from the drawer; the taskbar's Back
+  closes it first, before any panel or window.
 
 ## Sources
 

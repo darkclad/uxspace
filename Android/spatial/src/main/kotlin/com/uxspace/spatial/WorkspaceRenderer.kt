@@ -1034,6 +1034,8 @@ class WorkspaceRenderer(
         val settingsScreen = WorkspaceController.settingsOnScreen
         val audioOpen = WorkspaceController.isAudioOpen
         val audioScreen = WorkspaceController.audioOnScreen
+        val optometryOpen = WorkspaceController.isOptometryOpen
+        val optometryScreen = WorkspaceController.optometryOnScreen
         for (window in runningWindows) {
             val slotScreen = layout.screens.getOrNull(window.slotIdx) ?: continue
             if (window.displayId == null) continue  // bare display still spinning up
@@ -1100,8 +1102,16 @@ class WorkspaceRenderer(
             val drawerOpenHere = drawerOpen && drawerScreen == window.slotIdx
             val settingsOpenHere = settingsOpen && settingsScreen == window.slotIdx
             val audioOpenHere = audioOpen && audioScreen == window.slotIdx
-            if (drawerOpenHere || settingsOpenHere || audioOpenHere) {
-                val modal = WorkspaceController.modalBoundsForSlot(window.slotIdx)
+            val optometryOpenHere = optometryOpen && optometryScreen == window.slotIdx
+            if (drawerOpenHere || settingsOpenHere || audioOpenHere || optometryOpenHere) {
+                // The eye chart is full-bleed: its "modal rect" is the whole slot.
+                val modal = if (optometryOpenHere) {
+                    WorkspaceController.ModalBounds(
+                        0, 0, slotScreen.contentWidthPx, slotScreen.contentHeightPx,
+                    )
+                } else {
+                    WorkspaceController.modalBoundsForSlot(window.slotIdx)
+                }
                 val slotUi = if (window.slotIdx == 0) desktop
                 else extraScreens.getOrNull(window.slotIdx - 1)
                 if (modal != null && slotUi != null) {
@@ -2180,6 +2190,10 @@ class WorkspaceRenderer(
         val screenIdx = screenIndexUnderCursor() ?: return
         val screen = layout.screens.getOrNull(screenIdx) ?: return
         val px = cursorToRectPx(screen) ?: return
+        // The eye chart covers its whole screen; nothing under it can be grabbed.
+        if (WorkspaceController.isOptometryOpen &&
+            WorkspaceController.optometryOnScreen == screenIdx
+        ) return
         // Press-and-hold on an open drawer item arms a drag-to-desktop. Checked
         // ahead of window resize/drag because the drawer overlays everything on
         // its slot — a press in the drawer panel can't reach the windows below.
@@ -2465,6 +2479,7 @@ class WorkspaceRenderer(
         val px = cursorToRectPx(screen) ?: return
         // Modal panels (drawer / settings / audio / context menu itself) eat
         // the right-click — close the open modal and don't open a new one.
+        if (WorkspaceController.isOptometryOpen) return
         if (WorkspaceController.isDrawerOpen || WorkspaceController.isSettingsOpen ||
             WorkspaceController.isAudioOpen || WorkspaceController.isContextMenuOpen
         ) {
@@ -2566,6 +2581,8 @@ class WorkspaceRenderer(
             WorkspaceController.isDrawerOpen && WorkspaceController.drawerOnScreen == screenIdx
         ) || (
             WorkspaceController.isSettingsOpen && WorkspaceController.settingsOnScreen == screenIdx
+        ) || (
+            WorkspaceController.isOptometryOpen && WorkspaceController.optometryOnScreen == screenIdx
         )
         if (anyModalHere) {
             Log.i("UxSpace/DrawerDrag", "tryArmDesktop abort: modal open on slot $screenIdx")
@@ -2702,6 +2719,9 @@ class WorkspaceRenderer(
             ) || (
             WorkspaceController.isAudioOpen &&
                 WorkspaceController.audioOnScreen == screenIdx
+            ) || (
+            WorkspaceController.isOptometryOpen &&
+                WorkspaceController.optometryOnScreen == screenIdx
             )
         // Window hit only when no modal is open. The window's chrome lives in the
         // slot's Presentation view tree (so its buttons work via dispatchTap);
@@ -2805,6 +2825,9 @@ class WorkspaceRenderer(
             ) || (
             WorkspaceController.isAudioOpen &&
                 WorkspaceController.audioOnScreen == screenIdx
+            ) || (
+            WorkspaceController.isOptometryOpen &&
+                WorkspaceController.optometryOnScreen == screenIdx
             )
         if (!anyModalOpen) {
             val window = windowOnSlotAt(screenIdx, px[0], px[1])

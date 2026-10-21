@@ -5,8 +5,8 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.view.Gravity
-import android.widget.Toast
 import com.uxspace.R
+import com.uxspace.spatial.WorkspaceController
 
 /**
  * UxSpace's own tools, listed in the app drawer next to installed apps. They're not
@@ -30,10 +30,10 @@ object BuiltInApps {
         ),
     )
 
-    fun launch(context: Context, packageName: String) {
+    /** Open the built-in tool [packageName] on [screenIdx]. */
+    fun launch(packageName: String, screenIdx: Int) {
         when (packageName) {
-            EYE_CHART ->
-                Toast.makeText(context, "Eye chart — coming soon", Toast.LENGTH_SHORT).show()
+            EYE_CHART -> WorkspaceController.setOptometryOpen(true, screenIdx)
         }
     }
 

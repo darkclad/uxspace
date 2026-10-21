@@ -275,7 +275,8 @@ class DrawerView(context: Context) : LinearLayout(context) {
 
     private fun launch(app: InstalledApp) {
         if (BuiltInApps.isBuiltIn(app.packageName)) {
-            BuiltInApps.launch(context, app.packageName)
+            // Opens on the drawer's own screen (and closes the drawer).
+            BuiltInApps.launch(app.packageName, WorkspaceController.drawerOnScreen.coerceAtLeast(0))
             WorkspaceController.setDrawerOpen(false)
             return
         }

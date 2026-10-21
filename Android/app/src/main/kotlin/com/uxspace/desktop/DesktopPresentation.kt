@@ -141,6 +141,9 @@ class DesktopPresentation(
     /** Audio popup embedded alongside the drawer / settings — same modal model. */
     private lateinit var audio: AudioPanelView
 
+    /** Full-screen eye chart; covers everything on this slot while open. */
+    private lateinit var eyeChart: EyeChartView
+
     /** Pinned-app icons painted directly on the wallpaper for this screen's desktop. */
     private lateinit var shortcuts: DesktopShortcutsView
 
@@ -203,6 +206,19 @@ class DesktopPresentation(
                 settings.visibility = if (showHere) View.VISIBLE else View.GONE
             }
             refreshScrim()
+        }
+    }
+
+    private val optometryStateListener: (Boolean, Int) -> Unit = { open, screenIdx ->
+        mainHandler.post {
+            if (!::eyeChart.isInitialized) return@post
+            val showHere = open && screenIdx == slotIdx
+            if (showHere && eyeChart.visibility != View.VISIBLE) {
+                eyeChart.reshuffle()
+                root.bringChildToFront(eyeChart)
+                taskbarContainer?.let { root.bringChildToFront(it) }
+            }
+            eyeChart.visibility = if (showHere) View.VISIBLE else View.GONE
         }
     }
 
@@ -336,6 +352,10 @@ class DesktopPresentation(
             if (::settings.isInitialized) root.bringChildToFront(settings)
             if (::audio.isInitialized) root.bringChildToFront(audio)
             if (::snapPreview.isInitialized) root.bringChildToFront(snapPreview)
+            if (::eyeChart.isInitialized && eyeChart.visibility == View.VISIBLE) {
+                root.bringChildToFront(eyeChart)
+                taskbarContainer?.let { root.bringChildToFront(it) }
+            }
         }
     }
 
@@ -484,6 +504,14 @@ class DesktopPresentation(
         // Per-window chrome + frame views are created lazily by
         // [applyChromeBoundsList] when the renderer publishes a window's
         // bounds — one pair per package on this slot.
+        // Eye chart: over the wallpaper, windows' chrome and panels, but under the
+        // taskbar so its Back stays reachable while the chart is up.
+        // Full height (no wallpaper strip while the taskbar is auto-hidden); its own
+        // controls sit above the taskbar band.
+        eyeChart = EyeChartView(context, bottomReserveDp = TASKBAR_HEIGHT_DP).apply {
+            visibility = View.GONE
+        }
+        root.addView(eyeChart, FrameLayout.LayoutParams(MATCH, MATCH))
         if (showTaskbar) {
             taskbarContainer = buildTaskbar().also { root.addView(it) }
         }
@@ -550,6 +578,7 @@ class DesktopPresentation(
         WorkspaceController.addDrawerStateListener(drawerStateListener)
         WorkspaceController.addSettingsStateListener(settingsStateListener)
         WorkspaceController.addAudioStateListener(audioStateListener)
+        WorkspaceController.addOptometryStateListener(optometryStateListener)
         WorkspaceController.addContextMenuStateListener(contextMenuStateListener)
         WorkspaceController.addWindowBoundsListener(windowBoundsListener)
         WorkspaceController.addSnapPreviewListener(snapPreviewListener)
@@ -564,6 +593,7 @@ class DesktopPresentation(
         WorkspaceController.removeDrawerStateListener(drawerStateListener)
         WorkspaceController.removeSettingsStateListener(settingsStateListener)
         WorkspaceController.removeAudioStateListener(audioStateListener)
+        WorkspaceController.removeOptometryStateListener(optometryStateListener)
         WorkspaceController.removeContextMenuStateListener(contextMenuStateListener)
         WorkspaceController.removeWindowBoundsListener(windowBoundsListener)
         WorkspaceController.removeSnapPreviewListener(snapPreviewListener)
@@ -853,11 +883,13 @@ class DesktopPresentation(
     }
 
     /**
-     * Taskbar Back: dismiss a panel open on this screen first, otherwise send Back to
+     * Taskbar Back: dismiss the eye chart or a panel open on this screen first, otherwise send Back to
      * this screen's focused window (which closes the window once its stack empties).
      */
     private fun navigateBack() {
         when {
+            WorkspaceController.isOptometryOpen && WorkspaceController.optometryOnScreen == slotIdx ->
+                WorkspaceController.setOptometryOpen(false, slotIdx)
             WorkspaceController.isDrawerOpen && WorkspaceController.drawerOnScreen == slotIdx ->
                 WorkspaceController.setDrawerOpen(false, slotIdx)
             WorkspaceController.isSettingsOpen && WorkspaceController.settingsOnScreen == slotIdx ->
