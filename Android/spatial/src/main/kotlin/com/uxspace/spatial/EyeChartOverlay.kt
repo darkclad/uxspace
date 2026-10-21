@@ -11,19 +11,20 @@ import android.opengl.GLUtils
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
-import kotlin.math.pow
 import kotlin.math.roundToInt
 
 /**
  * The eye chart (docs/OPTOMETRY.md): a head-locked page of black-on-white text that
- * fills the whole glasses view, regardless of zoom, view mode or screen layout. The
- * user rolls the wheel to change the text size and turns the focus wheels until the
- * smallest size they can read is sharp. A click swaps black-on-white for white-on-black
+ * fills the whole glasses view, regardless of zoom, view mode or screen layout, in five
+ * boxes (one per corner and a large one in the centre) so focus can be judged across
+ * the field, where the optics differ, not just in the middle. The user rolls the wheel
+ * to change the text size and turns the focus wheels until the smallest size they can
+ * read is sharp. A click swaps black-on-white for white-on-black
  * (dark text on a bright field and the reverse blur differently); a right-click closes it.
  *
  * Text size is a real visual angle, sized the way reading charts (MNREAD, "M" print
- * sizes) size running text: the lowercase x-height is 5 arcmin × 10^[logMar] at the
- * glasses' [PX_PER_DEGREE], so the footer's "20/x" is the acuity that size tests.
+ * sizes) size running text: the lowercase x-height is 5 arcmin × [denominator]/20 at
+ * the glasses' [PX_PER_DEGREE], so the footer's "20/x" is the acuity that size tests.
  * (Snellen's 5 arcmin is a capital's height; lorem is lowercase, so sizing by capitals
  * would make every line read ~1.5 chart lines smaller than its label.)
  *
@@ -34,8 +35,8 @@ internal class EyeChartOverlay(
     /** Draws [textureId] over the full current viewport (the renderer's HUD quad). */
     private val drawFullscreen: (textureId: Int) -> Unit,
 ) {
-    /** Current size as logMAR: 0 = 20/20, 0.3 ≈ 20/40, 1 = 20/200. */
-    private var logMar = START_LOG_MAR
+    /** Current size as the Snellen denominator: 20/[denominator]. */
+    private var denominator = START_DENOMINATOR
 
     /** Uptime of the last size step, for the [STEP_COOLDOWN_MS] rate limit. */
     private var lastStepMs = 0L
@@ -43,7 +44,7 @@ internal class EyeChartOverlay(
     private var textureId = 0
     private var textureW = 0
     private var textureH = 0
-    private var textureLogMar = Float.NaN
+    private var textureDenominator = 0
 
     /** White text on black instead of black on white. */
     private var inverted = false
@@ -51,7 +52,7 @@ internal class EyeChartOverlay(
 
     /**
      * Wheel / two-finger scroll: up makes the text bigger, down smaller — one
-     * [STEP_LOG_MAR] step per scroll, at most every [STEP_COOLDOWN_MS]. Counting
+     * [STEP_DENOMINATOR] step per scroll, at most every [STEP_COOLDOWN_MS]. Counting
      * magnitude instead ran away: mice and the emulator send several ticks per notch,
      * and a touchpad swipe is a stream of events.
      */
@@ -60,8 +61,8 @@ internal class EyeChartOverlay(
         val now = android.os.SystemClock.uptimeMillis()
         if (now - lastStepMs < STEP_COOLDOWN_MS) return
         lastStepMs = now
-        val step = if (dyFraction > 0f) STEP_LOG_MAR else -STEP_LOG_MAR
-        logMar = (logMar + step).coerceIn(MIN_LOG_MAR, MAX_LOG_MAR)
+        val step = if (dyFraction > 0f) STEP_DENOMINATOR else -STEP_DENOMINATOR
+        denominator = (denominator + step).coerceIn(MIN_DENOMINATOR, MAX_DENOMINATOR)
     }
 
     /** Swap black-on-white ↔ white-on-black. */
@@ -72,12 +73,12 @@ internal class EyeChartOverlay(
     /** Draw the page over the whole [width] × [height] surface. Leaves the viewport set to it. */
     fun draw(width: Int, height: Int) {
         if (textureId == 0 || width != textureW || height != textureH ||
-            logMar != textureLogMar || inverted != textureInverted
+            denominator != textureDenominator || inverted != textureInverted
         ) {
             upload(render(width, height))
             textureW = width
             textureH = height
-            textureLogMar = logMar
+            textureDenominator = denominator
             textureInverted = inverted
         }
         GLES20.glViewport(0, 0, width, height)
@@ -90,7 +91,7 @@ internal class EyeChartOverlay(
         GLES20.glDeleteTextures(1, intArrayOf(textureId), 0)
         textureId = 0
         // Reopening starts fresh: default size, black on white.
-        logMar = START_LOG_MAR
+        denominator = START_DENOMINATOR
         inverted = false
     }
 
@@ -102,8 +103,7 @@ internal class EyeChartOverlay(
         val footerH = (height * FOOTER_FRACTION).roundToInt()
         val margin = (width * MARGIN_FRACTION).roundToInt()
 
-        // Body: lorem ipsum filling everything above the footer.
-        val xHeightPx = PX_PER_DEGREE * (5f / 60f) * 10f.pow(logMar)
+        val xHeightPx = PX_PER_DEGREE * (5f / 60f) * denominator / 20f
         val body = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = if (inverted) Color.WHITE else Color.BLACK
             typeface = Typeface.create("sans-serif", Typeface.NORMAL)
@@ -112,23 +112,17 @@ internal class EyeChartOverlay(
             getTextBounds("x", 0, 1, bounds)
             textSize = 100f * xHeightPx / bounds.height()
         }
-        // Just enough lorem to fill the page at this size (20/20 needs ~100k chars).
-        val textW = width - 2 * margin
-        val charW = body.measureText(LOREM) / LOREM.length
-        val lineH = body.fontSpacing * LINE_SPACING
-        val needed = (textW / charW) * (height / lineH) * 1.15f
-        val page = LOREM.repeat((needed / LOREM.length).toInt() + 1)
-        val layout = StaticLayout.Builder
-            .obtain(page, 0, page.length, body, textW)
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-            .setLineSpacing(0f, LINE_SPACING)
-            .setIncludePad(false)
-            .build()
-        canvas.save()
-        canvas.clipRect(0, 0, width, height - footerH)
-        canvas.translate(margin.toFloat(), margin.toFloat() * 0.6f)
-        layout.draw(canvas)
-        canvas.restore()
+        val frame = Paint().apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 1f
+            color = if (inverted) FRAME_ON_BLACK else FRAME_ON_WHITE
+        }
+        val pad = (width * BOX_PADDING_FRACTION).roundToInt()
+        boxes(width, height - footerH, margin).forEachIndexed { i, box ->
+            canvas.drawRect(box, frame)
+            // Each box starts at a different point in the text so they don't read alike.
+            drawText(canvas, box, pad, body, startAt = i * LOREM.length / BOX_COUNT)
+        }
 
         // Footer: what size this is and how to drive it, at a fixed readable size.
         val footerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = FOOTER_BG }
@@ -143,7 +137,7 @@ internal class EyeChartOverlay(
             typeface = Typeface.create("sans-serif", Typeface.NORMAL)
         }
         val baseline = height - footerH / 2f + label.textSize * 0.36f
-        val acuity = "20/${snellenDenominator()}"
+        val acuity = "20/$denominator"
         canvas.drawText(acuity, margin.toFloat(), baseline, label)
         canvas.drawText(
             "Scroll to change the size and turn the focus wheel until it's sharp. " +
@@ -155,10 +149,44 @@ internal class EyeChartOverlay(
         return bmp
     }
 
-    /** "40", "32", "12.5" … — the denominator of the 20/x line this size matches. */
-    private fun snellenDenominator(): String {
-        val d = 20f * 10f.pow(logMar)
-        return if (d >= 30f) d.roundToInt().toString() else "%.1f".format(d).removeSuffix(".0")
+    /**
+     * The five text boxes in a [width] × [height] page: one per corner and a centre box
+     * spanning nearly the full height between them, the largest of the five.
+     */
+    private fun boxes(width: Int, height: Int, margin: Int): List<Rect> {
+        val m = margin
+        val cornerW = (width * CORNER_W_FRACTION).roundToInt()
+        val cornerH = (height * CORNER_H_FRACTION).roundToInt()
+        val gap = (width * BOX_GAP_FRACTION).roundToInt()
+        return listOf(
+            Rect(m, m, m + cornerW, m + cornerH),
+            Rect(width - m - cornerW, m, width - m, m + cornerH),
+            Rect(m + cornerW + gap, m, width - m - cornerW - gap, height - m),
+            Rect(m, height - m - cornerH, m + cornerW, height - m),
+            Rect(width - m - cornerW, height - m - cornerH, width - m, height - m),
+        )
+    }
+
+    /** Lorem ipsum filling [box] (inset by [pad]), starting [startAt] chars into it. */
+    private fun drawText(canvas: Canvas, box: Rect, pad: Int, paint: TextPaint, startAt: Int) {
+        val textW = box.width() - 2 * pad
+        if (textW <= 0) return
+        // Just enough text to fill the box at this size (20/20 is a lot of characters).
+        val charW = paint.measureText(LOREM) / LOREM.length
+        val lineH = paint.fontSpacing * LINE_SPACING
+        val needed = (textW / charW) * (box.height() / lineH) * 1.15f + startAt
+        val text = LOREM.repeat((needed / LOREM.length).toInt() + 2).substring(startAt)
+        val layout = StaticLayout.Builder
+            .obtain(text, 0, text.length, paint, textW)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setLineSpacing(0f, LINE_SPACING)
+            .setIncludePad(false)
+            .build()
+        canvas.save()
+        canvas.clipRect(box.left + pad, box.top + pad, box.right - pad, box.bottom - pad)
+        canvas.translate((box.left + pad).toFloat(), (box.top + pad).toFloat())
+        layout.draw(canvas)
+        canvas.restore()
     }
 
     private fun upload(bmp: Bitmap) {
@@ -186,23 +214,33 @@ internal class EyeChartOverlay(
         const val PX_PER_DEGREE = 44f
 
         /** Opening size: 20/40. */
-        const val START_LOG_MAR = 0.3f
+        const val START_DENOMINATOR = 40
 
         /** 20/20 (≈4 px x-height here, about the finest the panel can draw). */
-        const val MIN_LOG_MAR = 0f
+        const val MIN_DENOMINATOR = 20
 
         /** 20/200. */
-        const val MAX_LOG_MAR = 1f
+        const val MAX_DENOMINATOR = 200
 
-        /** One scroll step = half a chart line. */
-        const val STEP_LOG_MAR = 0.05f
+        /** One scroll step: 20/40 → 20/45 → 20/50 … */
+        const val STEP_DENOMINATOR = 5
 
         /** Minimum time between steps, so one notch or flick moves one step. */
         const val STEP_COOLDOWN_MS = 150L
 
         const val LINE_SPACING = 1.35f
-        const val MARGIN_FRACTION = 0.04f
+        const val MARGIN_FRACTION = 0.02f
         const val FOOTER_FRACTION = 0.06f
+
+        /** Box layout, as fractions of the page above the footer. */
+        const val BOX_COUNT = 5
+        const val CORNER_W_FRACTION = 0.27f
+        const val CORNER_H_FRACTION = 0.40f
+        const val BOX_GAP_FRACTION = 0.015f
+        const val BOX_PADDING_FRACTION = 0.008f
+
+        const val FRAME_ON_WHITE = 0xFFB9B8BD.toInt()
+        const val FRAME_ON_BLACK = 0xFF4A494E.toInt()
 
         const val FOOTER_BG = 0xFF1B1A1D.toInt()
         const val FOOTER_HINT = 0xFFB4B2B8.toInt()

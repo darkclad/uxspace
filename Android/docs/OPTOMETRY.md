@@ -22,12 +22,14 @@ activity, and it can't be dragged out as a window.
 
 The chart takes the **whole glasses view**: a head-locked page drawn by the renderer
 over everything, regardless of zoom, FREE/pinned mode or the screen layout. The page is
-black lorem-ipsum text on white, filling the view, with a footer showing the current
-size ("20/40") and how to drive it.
+black lorem-ipsum text on white in **five framed boxes**: one in each corner and a large
+centre box spanning nearly the full height between them. The glasses' optics blur the
+corners differently from the middle, so the user can check focus across the whole field.
+A footer shows the current size ("20/40") and how to drive it.
 
-- **Wheel / two-finger scroll** changes the text size by 0.05 logMAR (half a chart
-  line) per step, at most one step every 150 ms however many ticks a notch sends,
-  from 20/20 up to 20/200. It opens at **20/40**.
+- **Wheel / two-finger scroll** steps the size **5 at a time** in the 20/x denominator
+  (20/40 → 20/45 → 20/50 …), at most one step every 150 ms however many ticks a notch
+  sends, from 20/20 up to 20/200. It opens at **20/40**.
 - **Click** anywhere swaps black-on-white for white-on-black (bright text on a dark field
   blurs differently, and is closer to what the glasses usually show).
 - **Right-click** anywhere closes it. Reopening starts at 20/40, black on white.
@@ -37,7 +39,7 @@ until it is sharp. Text instead of isolated letters makes blur obvious across th
 field, not just the centre.
 
 **Sizes are real visual angles**, measured the way reading charts (MNREAD, "M" print
-sizes) measure running text: the lowercase **x-height** is 5 arcmin × 10^logMAR at
+sizes) measure running text: the lowercase **x-height** is 5 arcmin × x/20 (for 20/x) at
 `EyeChartOverlay.PX_PER_DEGREE` (44: VITURE's 1920-px panel spans ~44°). Snellen's
 5 arcmin is a *capital's* height; sizing lowercase lorem by capitals made every line read
 about 1.5 chart lines smaller than its label. 20/40 is a ~7 px x-height, 20/20 ~4 px,
