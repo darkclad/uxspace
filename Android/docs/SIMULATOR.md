@@ -19,8 +19,13 @@ It's the normal app in a debug build, plus three things:
 
 The privileged helper is the real one. The emulator supports Wireless debugging, so
 UxSpace pairs and starts `PrivilegedServer` exactly as it does on a phone. That
-means trusted displays, app launching, and the helper's evdev keyboard path all work
-too.
+means trusted displays, app launching, the helper's evdev mouse and keyboard paths,
+the taskbar's notifications and its quick-settings toggles all work too.
+
+A few behaviours are emulator-only (checked with `Build.HARDWARE` = `ranchu`) so the
+simulator can be driven with a PC mouse: the middle-button gestures, Android's pointer
+showing over the phone toolbar, and the simulator hint on the touchpad. They never
+change behaviour on a phone.
 
 ## One-time setup
 
@@ -52,18 +57,46 @@ too.
 
    `pair` turns on Developer options and Wireless debugging (accepting "Always allow
    on this network"). It opens *Pair device with pairing code*, reads the code, and
-   passes it to the app over the bridge. It should print `ok paired`. Pairing
-   survives reboots. After a cold boot, Wireless debugging usually comes back on by
-   itself. If it doesn't, run `pair` again; it's safe to repeat.
+   passes it to the app over the bridge. It should print `ok paired`.
 
 With several devices attached, set `ANDROID_SERIAL` (for example `emulator-5580`).
 Both `adb` and `uxsim.py` use it.
 
 ## Each session
 
-```bash
-python tools/simulator/uxsim.py setup
-```
+1. **Start the emulator** cold, with a virtio relative mouse (see
+   [Mouse and keyboard](#mouse-and-keyboard)), detached from your shell:
+
+   ```bash
+   emulator -avd UxSpace_Sim -port 5580 -feature VirtioMouse,-VirtioTablet -no-snapshot-load
+   ```
+
+   Cold-boot (`-no-snapshot-load`): a restored quick-boot snapshot can bring the
+   workspace display back as a frozen frame.
+
+2. **Start UxSpace and check the helper.** Wireless debugging is normally off again
+   after a boot, so the helper reports `NEEDS_WIRELESS_DEBUGGING` and the desktop
+   stays blank. `pair` turns it back on and re-pairs; it's safe to repeat. Then
+   restart UxSpace so the desktop comes up with the helper ready:
+
+   ```bash
+   python tools/simulator/uxsim.py send state
+   ```
+   ```bash
+   python tools/simulator/uxsim.py pair
+   ```
+   ```bash
+   adb shell am force-stop com.uxspace
+   ```
+   ```bash
+   adb shell am start -n com.uxspace/.MainActivity
+   ```
+
+3. **Add the fake glasses display:**
+
+   ```bash
+   python tools/simulator/uxsim.py setup
+   ```
 
 This adds emulator display 1 (1920x1080 at 320 dpi; pass another `WxH/DPI` to
 change it) and runs the `adb forward`. The display opens as its own window on the PC,
@@ -95,19 +128,8 @@ mode works the way it does with real tracking. The pad starts in FREE mode, faci
 
 ### Mouse and keyboard
 
-- **Mouse, captured (recommended):** start the emulator with a virtio relative
-  mouse:
-
-  ```bash
-  emulator -avd UxSpace_Sim -port 5580 -feature VirtioMouse,-VirtioTablet -no-snapshot-load
-  ```
-
-  Cold-boot (`-no-snapshot-load`): when the emulator restores its quick-boot snapshot,
-  the workspace display can come back as a frozen frame. Wireless debugging is off again
-  too, so the helper reports `NEEDS_WIRELESS_DEBUGGING`. If that happens, run
-  `uxsim.py pair` and restart UxSpace.
-
-  The guest then has a "QEMU Virtio Mouse" (REL_X/REL_Y). The privileged helper
+- **Mouse, captured (recommended):** with `-feature VirtioMouse,-VirtioTablet` (step 1
+  of [Each session](#each-session)), the guest has a "QEMU Virtio Mouse" (REL_X/REL_Y). The privileged helper
   classes it MOUSE and EVIOCGRABs it, exactly like a BT mouse on the phone. Click
   inside any emulator window to capture the host mouse; it then drives the workspace
   cursor, and the wheel scrolls. The emulator swallows host keys while it has the
@@ -122,7 +144,7 @@ mode works the way it does with real tracking. The pad starts in FREE mode, faci
   | **Ctrl+R** | The emulator gives the mouse back to Windows. |
 
   This is all emulator-only. On a phone the middle button is untouched.
-- **Mouse, uncaptured:** without that flag, the host mouse arrives as touch.
+- **Mouse, uncaptured:** without that feature flag, the host mouse arrives as touch.
   Click-drag on the emulator's main screen. That screen is the UxSpace touchpad, so
   drag moves the cursor, tap clicks, hold grabs a window, and two fingers scroll.
   Ctrl-drag in the emulator gives you two fingers. The cursor hides when idle, so
@@ -175,8 +197,14 @@ python tools/simulator/uxsim.py teardown
 
 - Head tracking is orientation-only. No 6DOF position is simulated, and nothing
   exercises the `HeadTracking` USB/SDK path or its stall watchdogs.
-- The emulator's display is a VIRTUAL display that draws system decorations, so a
-  gesture-bar handle shows at its bottom edge. The real glasses don't have one.
+- The emulator's display is a VIRTUAL display that draws system decorations. Its
+  navigation bar takes the bottom edge (the gesture-bar handle), and the workspace is
+  letterboxed into what's left, so black bands show at the bottom and sides. The real
+  glasses have no system bar and get the full frame.
+- Airplane mode (from the taskbar's quick settings) turns Wi-Fi off. That takes down
+  Wireless debugging and with it the privileged helper. Turn it back off from the PC
+  with `adb shell cmd connectivity airplane-mode disable`, then run `pair`. The same
+  happens on a phone.
 - Rendering goes through the emulator's GPU translation. Use it for layout and
   behaviour, not for frame-rate or GL-precision work.
 - Building without `-PuxspaceNoViture` while the SDK is present gives an APK with

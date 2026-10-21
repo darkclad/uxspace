@@ -102,7 +102,9 @@ a specific commit.
 | `spatial` | The 3D workspace — camera, screens, the GL renderer     |
 | `glasses` | VITURE head tracking and the native-SDK JNI bridge      |
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the layered design.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the layered design. To work on the
+desktop UI without glasses, run it on an Android emulator: see
+[`docs/SIMULATOR.md`](docs/SIMULATOR.md).
 
 ---
 

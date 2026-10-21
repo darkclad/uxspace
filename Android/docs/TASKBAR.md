@@ -5,11 +5,13 @@ cluster, the running-app strip in the middle, and a right system-status tray.
 
 ## Current state
 
-[`DesktopPresentation`](../app/src/main/kotlin/com/uxspace/desktop/DesktopPresentation.kt)
-draws a full-width bar flush with the bottom edge holding three things: an app-drawer
-button, a centred strip of one icon per open window (`runningIcons`), and a clock pinned
-right. It is a real Android view hierarchy on `Theme.DeviceDefault`, so on a Samsung
-device the widgets are styled as One UI.
+[`DesktopPresentation.buildTaskbar`](../app/src/main/kotlin/com/uxspace/desktop/DesktopPresentation.kt)
+draws the three-zone bar described below. The left cluster has the Recents / Home / Back
+trio, and the centre has Search, the app drawer and one icon per running window. The
+right side is the DeX-style tray (see [Status tray](#status-tray-right--dex-style-built)).
+Colours come from `UxSpaceTheme`, and cells use `cellBackground()` / `buildDivider()`.
+To work on it without glasses, use the emulator simulator ([SIMULATOR.md](SIMULATOR.md));
+`uxsim.py send panel notifications|quick` opens the tray panels directly.
 
 ---
 
@@ -122,28 +124,13 @@ State is read without privilege: `Settings.Global` (Wi-Fi, Bluetooth, airplane),
 
 ---
 
-## Build order
+## Not done yet
 
-1. Restructure `buildTaskbar()` into the three-zone layout, all buttons present (most as
-   placeholders that just toast). No status reads yet.
-2. Left cluster wiring: divider, **Show desktop** (`toggleShowDesktop`), **Search** (open
-   drawer + focus), **Optometry** (open the chart overlay), **Recent apps** (workspace
-   MRU list + panel).
-3. `SystemStatus` helper for the read side; bind the always-visible row — clock (done),
-   battery, volume, Wi-Fi, signal.
-4. Quick-settings panel scaffold: click the right cluster to open/close. Inside: time,
-   brightness slider, volume slider.
-5. Quick toggles: Wi-Fi, Bluetooth, Mobile data, Aeroplane, Torch — through the
-   privileged helper.
-6. Notifications: notification-access opt-in flow, then the list view in the panel.
-7. Message indicator wired from the notification listener.
-
-Each step is a separate commit.
-
-**Touch points.** `DesktopPresentation` (three-zone layout, tray row, quick-settings
-panel view); new `SystemStatus` helper; new `QuickSettingsPanel` view + a small layout
-include; `WorkspaceController` (`toggleShowDesktop`, `setOptometryOpen`, workspace MRU
-list, open-drawer-with-search); a `IPrivilegedService.runShell(cmd: String)` method for
-the toggles; new vector drawables (divider, recent, show-desktop, optometry, search,
-battery, signal, wifi, volume, brightness, message, settings); notification-access
-opt-in.
+- Quick toggles DeX also has: Mobile data, Torch, Auto-rotate. They'd be more
+  `setQuickSetting` names in the helper's whitelist plus tiles in
+  `QuickSettingsPanelView`.
+- The tray panels open in the shared centred modal slot rather than anchored above the
+  tray as in DeX. Anchoring them needs the renderer's modal re-composite (which draws a
+  panel over app windows) to take a per-panel rectangle.
+- DeX's partial screenshot (right-click on the screenshot button).
+- A keyboard-language indicator for a physical keyboard.
