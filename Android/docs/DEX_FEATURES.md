@@ -57,11 +57,31 @@ long-press), Maximize.
 
 - **Storage:** a `TaskbarPinsStore` like `DesktopShortcutsStore` (SharedPreferences,
   ordered package list).
+- **Default = the phone's dock.** Until the user pins or unpins anything, the pinned set
+  mirrors the dock (hotseat) of the phone's or tablet's home screen and follows it as it
+  changes, which is exactly what DeX does (its taskbar showed the Fold's dock: Phone,
+  Tesla, Chrome, Camera, Claude, Gallery). The first user edit copies the current set
+  and stops mirroring; a "Reset to phone's dock" item in the icon menu turns it back on.
+  - **Reading the dock:** launchers have no public API for it, and Samsung's launcher
+    database needs `com.samsung.android.launcher.permission.READ_SETTINGS`, which is
+    `signature|privileged` (checked on the Fold 7: shell uid gets a SecurityException).
+    What works from the privileged helper (shell uid) is the launcher's own dump:
+    `dumpsys activity <home activity>` (`cmd package resolve-activity -c HOME` finds it)
+    lists the dock's views in order, e.g. One UI's `app:id/hotseat_layout` with one
+    `IconViewImpl … - <label>` per slot. Map labels to packages through the installed
+    apps' launcher labels (`AppCache`); skip folders and unmatched or ambiguous labels.
+  - **Other launchers:** Launcher3-based ones (Pixel, AOSP) print their model in the
+    same dump with `container=-101` (hotseat) items and their intents, so packages come
+    directly. Anything unparseable falls back to no default pins.
+  - **When:** read on helper start and whenever the desktop appears, cache the result,
+    and re-read at most every few minutes; the dump format is launcher-private, so the
+    parser lives behind one `DockReader` interface with a per-launcher implementation.
 - **Drawer:** add "Pin to taskbar" to drawer items' right-click.
-- **Touch points:** `DesktopPresentation` (centre cluster, icon menu), new
+- **Touch points:** `DesktopPresentation` (centre cluster, icon menu), new `DockReader`
+  (helper side, `PrivilegedServer`), new
   `TaskbarPinsStore`, `WorkspaceRenderer` right-click routing (taskbar hit →
   Presentation instead of the desktop context menu).
-- **Effort:** medium.
+- **Effort:** medium (the dock mirroring adds a launcher-specific parser).
 
 ## 3. Keyboard window shortcuts
 
