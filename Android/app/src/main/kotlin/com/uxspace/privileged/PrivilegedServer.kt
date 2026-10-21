@@ -742,7 +742,8 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
         private val modsHeld = AtomicBoolean(false)
 
         /**
-         * Emulator only (docs/SIMULATOR.md): a middle-click hands the grabbed mouse back to
+         * Emulator only (docs/SIMULATOR.md): a middle-click (press + release with little
+         * motion — a middle-*drag* is the simulator's head look) hands the grabbed mouse back to
          * Android, so its own pointer can reach the phone-side toolbar; a mouse click on the
          * trackpad takes it back via [regrabPointers]. (A key can't do this: the emulator's
          * mouse capture swallows host keys.) Never on real hardware.
@@ -754,6 +755,9 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
 
         /** Pointers whose grab the passthrough dropped, re-opened (and re-grabbed) by [regrabPointers]. */
         private val releasedPointers = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+        /** Relative motion since the middle button went down, or -1 while it is up. */
+        @Volatile private var middleMotion = -1
 
         private var fileObserver: FileObserver? = null
 
@@ -1302,6 +1306,7 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
                     REL_Y -> mouseDyAccum += value
                     REL_WHEEL -> mouseWheelAccum += value
                 }
+                if (middleMotion >= 0 && code != REL_WHEEL) middleMotion += kotlin.math.abs(value)
                 return
             }
             // Touchpad absolute motion — stashed until SYN, where it becomes a relative delta.
@@ -1342,8 +1347,15 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
             }
             if (type != EV_KEY) return
             if (simPointerRelease && code == BTN_MIDDLE) {
-                if (value == 1) setPointerPassthrough(true)
-                return
+                // Forwarded below like any button (the app's sim layer looks around on a
+                // middle-drag); a release after little motion is a click → passthrough.
+                when (value) {
+                    1 -> middleMotion = 0
+                    0 -> {
+                        if (middleMotion in 0 until MIDDLE_CLICK_SLOP) setPointerPassthrough(true)
+                        middleMotion = -1
+                    }
+                }
             }
             // Finger contact on a touchpad — brackets each stroke. On lift we drop the
             // baseline so the next touch starts fresh instead of teleporting the cursor.
@@ -1480,6 +1492,9 @@ class PrivilegedServer() : IPrivilegedService.Stub() {
             private const val BTN_TOOL_DOUBLETAP = 333
             // _IOW('E', 0x90, int) — exclusive-grab ioctl for evdev devices.
             private const val EVIOCGRAB = 0x40044590
+
+            /** Simulator: REL ticks a middle press may travel and still count as a click. */
+            private const val MIDDLE_CLICK_SLOP = 12
             private const val KEY_MINUS = 12
             private const val KEY_EQUAL = 13
             private const val KEY_R = 19

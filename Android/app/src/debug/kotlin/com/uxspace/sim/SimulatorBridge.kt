@@ -4,6 +4,7 @@ import android.content.ContentProvider
 import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -28,8 +29,9 @@ import kotlin.math.sin
  * one command per line, each answered with `ok` or `err <reason>`:
  *
  *  - `pose <yawDeg> <pitchDeg> [rollDeg]` — absolute head orientation; positive yaw looks
- *    right, positive pitch looks up. The first pose marks DOF live (ungrays FREE mode).
- *  - `dof on|off` — mark the fake pose stream live / dead.
+ *    right, positive pitch looks up.
+ *  - `dof on|off` — keep the fake pose stream live (the default, so FREE mode is available)
+ *    or let it drop.
  *  - `mode free|pinned` — workspace view mode.
  *  - `recenter` — the toolbar's align-to-head.
  *  - `layout` — cycle the multi-screen layout (FREE mode only).
@@ -40,14 +42,68 @@ import kotlin.math.sin
  *  - `pair <code>` — the Wireless debugging pairing code, as if typed into the pairing
  *    notification; replies once pairing finishes. `state` — the privileged helper's state.
  *
+ * On the emulator it also turns a middle-button drag of the captured mouse into head look
+ * (the helper still treats a middle *click* as "hand the mouse to the touchpad").
+ *
  * Started by this provider's [onCreate], which runs at process start before the
  * Application — so it needs no hook in the main source set. Release builds never contain it.
  */
 class SimulatorBridge : ContentProvider() {
 
+    /** Simulated head orientation in degrees; see [quaternion] for the conventions. */
+    @Volatile private var yaw = 0f
+    @Volatile private var pitch = 0f
+    @Volatile private var roll = 0f
+
+    /** `dof off` — stop [keepDofLive] from re-marking the fake pose stream live. */
+    @Volatile private var dofOff = false
+
+    private var middleHeld = false
+
     override fun onCreate(): Boolean {
         thread(name = "uxspace-sim", isDaemon = true) { serve() }
+        // Posted, so both run after UxSpaceApp.onCreate has installed its handlers.
+        main.post(keepDofLive)
+        if (IS_EMULATOR) main.post(::installMouseLook)
         return true
+    }
+
+    /**
+     * There are no glasses, so nothing ever reports DOF; without it FREE mode is grayed out.
+     * Mark the fake stream live (with the current pose) whenever a workspace is showing.
+     */
+    private val keepDofLive: Runnable = object : Runnable {
+        override fun run() {
+            if (!dofOff && WorkspaceController.isRunning && !WorkspaceController.headTrackingActive) {
+                applyPose()
+                WorkspaceController.headTrackingActive = true
+            }
+            main.postDelayed(this, DOF_CHECK_MS)
+        }
+    }
+
+    /** Wrap the helper's raw mouse handlers: motion with the middle button held turns the head. */
+    private fun installMouseLook() {
+        val buttons = PrivilegedService.mouseButtonHandler
+        val deltas = PrivilegedService.mouseDeltaHandler
+        PrivilegedService.mouseButtonHandler = { code, pressed ->
+            if (code == BTN_MIDDLE) middleHeld = pressed
+            buttons?.invoke(code, pressed)
+        }
+        PrivilegedService.mouseDeltaHandler = { dx, dy, wheel ->
+            if (middleHeld) {
+                yaw = ((yaw + dx * LOOK_DEG_PER_TICK) + 540f) % 360f - 180f
+                pitch = (pitch - dy * LOOK_DEG_PER_TICK).coerceIn(-89f, 89f)
+                applyPose()
+            } else {
+                deltas?.invoke(dx, dy, wheel)
+            }
+        }
+    }
+
+    private fun applyPose() {
+        val (w, x, y, z) = quaternion(yaw, pitch, roll)
+        WorkspaceController.injectHeadPose(w, x, y, z)
     }
 
     private fun serve() {
@@ -82,14 +138,19 @@ class SimulatorBridge : ContentProvider() {
         when (args[0]) {
             "pose" -> {
                 if (!WorkspaceController.isRunning) return "err workspace not showing"
-                val (w, x, y, z) = quaternion(f(1), f(2), f(3, 0f))
-                WorkspaceController.injectHeadPose(w, x, y, z)
-                if (!WorkspaceController.headTrackingActive) WorkspaceController.headTrackingActive = true
+                yaw = f(1); pitch = f(2); roll = f(3, 0f)
+                applyPose()
+                if (!dofOff && !WorkspaceController.headTrackingActive) {
+                    WorkspaceController.headTrackingActive = true
+                }
             }
-            "dof" -> WorkspaceController.headTrackingActive = when (args.getOrNull(1)) {
-                "on" -> true
-                "off" -> false
-                else -> return "err usage: dof on|off"
+            "dof" -> {
+                dofOff = when (args.getOrNull(1)) {
+                    "on" -> false
+                    "off" -> true
+                    else -> return "err usage: dof on|off"
+                }
+                WorkspaceController.headTrackingActive = !dofOff
             }
             "mode" -> {
                 val mode = when (args.getOrNull(1)) {
@@ -177,5 +238,16 @@ class SimulatorBridge : ContentProvider() {
         const val TAG = "UxSpace/Sim"
         /** Device-side port; `adb forward tcp:47800 tcp:47800` reaches it from the PC. */
         const val PORT = 47800
+
+        /** How often [keepDofLive] checks for a (re)shown workspace. */
+        const val DOF_CHECK_MS = 1000L
+
+        /** Head turn per raw mouse tick while middle-dragging. */
+        const val LOOK_DEG_PER_TICK = 0.15f
+
+        /** Kernel BTN_MIDDLE, as the helper reports it. */
+        const val BTN_MIDDLE = 274
+
+        val IS_EMULATOR = Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish"
     }
 }

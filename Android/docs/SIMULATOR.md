@@ -88,8 +88,10 @@ python tools/simulator/uxsim.py
 | Right-drag | Move the workspace cursor |
 | Space | Click |
 
-The pad starts in FREE mode facing (0, 0). The first pose marks DOF as live, so the
-FREE/layout buttons on the phone toolbar ungray, just like with real tracking.
+The debug build keeps a fake DOF stream live whenever the workspace is showing. The
+lock and layout buttons on the phone toolbar are therefore always enabled, so FREE
+mode works the way it does with real tracking. The pad starts in FREE mode, facing
+(0, 0).
 
 ### Mouse and keyboard
 
@@ -103,7 +105,9 @@ FREE/layout buttons on the phone toolbar ungray, just like with real tracking.
   The guest then has a "QEMU Virtio Mouse" (REL_X/REL_Y). The privileged helper
   classes it MOUSE and EVIOCGRABs it, exactly like a BT mouse on the phone. Click
   inside any emulator window to capture the host mouse; it then drives the workspace
-  cursor, and the wheel scrolls. **Middle-click** to hand the mouse to the left
+  cursor, and the wheel scrolls. **Hold the middle button and move** to turn the
+  head, which is how you look around in FREE mode. **Middle-click** (with no
+  movement) to hand the mouse to the left
   (phone) window. Android's pointer appears there, and you can click the toolbar
   icons. **Click on the touchpad area** to give the mouse back to the workspace
   cursor. This is emulator-only; on a phone the middle button is untouched. The
@@ -131,7 +135,7 @@ python tools/simulator/uxsim.py send pose 30 -10
 | Command | Effect |
 |---|---|
 | `pose <yaw> <pitch> [roll]` | Absolute head orientation in degrees; +yaw looks right, +pitch looks up |
-| `dof on\|off` | Mark the fake pose stream live or dead |
+| `dof on\|off` | Keep the fake pose stream live (the default), or let it drop |
 | `mode free\|pinned` | View mode |
 | `recenter` | Align to head |
 | `layout` | Cycle the multi-screen layout |
