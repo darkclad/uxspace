@@ -142,6 +142,7 @@ mode works the way it does with real tracking. The pad starts in FREE mode, faci
   | **Middle-click** | Hand the mouse to the left (phone) window. Android's pointer appears there and you can click the toolbar icons. It acts after a ~350 ms double-click window. |
   | **Click on the touchpad area** | Give the mouse back to the workspace cursor. |
   | **Ctrl+R** | The emulator gives the mouse back to Windows. |
+  | **Lone Ctrl+Alt tap** | Same as Ctrl+R, VM-style, while [`tools/simulator/release-mouse.ahk`](../tools/simulator/release-mouse.ahk) (AutoHotkey v2) runs on the PC. Ctrl+Alt+key combos are unaffected. |
 
   This is all emulator-only. On a phone the middle button is untouched.
 - **Mouse, uncaptured:** without that feature flag, the host mouse arrives as touch.
