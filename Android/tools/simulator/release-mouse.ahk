@@ -6,7 +6,7 @@
 ; With VirtioMouse on, clicking inside the Android emulator captures the host mouse and
 ; keyboard; the emulator's own release shortcut is Ctrl+R. This makes a lone Ctrl+Alt
 ; tap (press both, release, no other key in between) release it too, VM-style.
-; Ctrl+Alt+<key> combos still reach the guest, so UxSpace's Ctrl+Alt hotkeys keep working.
+; Ctrl+Alt+<key> combos are left alone. Only the lone tap is turned into Ctrl+R.
 ; Only active while an emulator window is in front.
 ;
 
