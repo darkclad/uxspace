@@ -1034,8 +1034,6 @@ class WorkspaceRenderer(
         val settingsScreen = WorkspaceController.settingsOnScreen
         val audioOpen = WorkspaceController.isAudioOpen
         val audioScreen = WorkspaceController.audioOnScreen
-        val optometryOpen = WorkspaceController.isOptometryOpen
-        val optometryScreen = WorkspaceController.optometryOnScreen
         for (window in runningWindows) {
             val slotScreen = layout.screens.getOrNull(window.slotIdx) ?: continue
             if (window.displayId == null) continue  // bare display still spinning up
@@ -1102,16 +1100,8 @@ class WorkspaceRenderer(
             val drawerOpenHere = drawerOpen && drawerScreen == window.slotIdx
             val settingsOpenHere = settingsOpen && settingsScreen == window.slotIdx
             val audioOpenHere = audioOpen && audioScreen == window.slotIdx
-            val optometryOpenHere = optometryOpen && optometryScreen == window.slotIdx
-            if (drawerOpenHere || settingsOpenHere || audioOpenHere || optometryOpenHere) {
-                // The eye chart is full-bleed: its "modal rect" is the whole slot.
-                val modal = if (optometryOpenHere) {
-                    WorkspaceController.ModalBounds(
-                        0, 0, slotScreen.contentWidthPx, slotScreen.contentHeightPx,
-                    )
-                } else {
-                    WorkspaceController.modalBoundsForSlot(window.slotIdx)
-                }
+            if (drawerOpenHere || settingsOpenHere || audioOpenHere) {
+                val modal = WorkspaceController.modalBoundsForSlot(window.slotIdx)
                 val slotUi = if (window.slotIdx == 0) desktop
                 else extraScreens.getOrNull(window.slotIdx - 1)
                 if (modal != null && slotUi != null) {
@@ -1168,7 +1158,14 @@ class WorkspaceRenderer(
         drawRecordingIndicator()
         if (WorkspaceController.legendVisible) drawLegend()
         drawLayoutAnnouncement()
-        drawCursor()
+        if (WorkspaceController.isOptometryOpen) {
+            // Head-locked over everything; no cursor, since a click anywhere closes it.
+            eyeChart.draw(surfaceWidth, surfaceHeight)
+            applyBand()
+        } else {
+            eyeChart.release()
+            drawCursor()
+        }
 
         // Capture pipeline: first consume any async readback issued on an earlier frame
         // (no GPU stall — the data is long since ready), then issue a new readback if a
@@ -2190,10 +2187,8 @@ class WorkspaceRenderer(
         val screenIdx = screenIndexUnderCursor() ?: return
         val screen = layout.screens.getOrNull(screenIdx) ?: return
         val px = cursorToRectPx(screen) ?: return
-        // The eye chart covers its whole screen; nothing under it can be grabbed.
-        if (WorkspaceController.isOptometryOpen &&
-            WorkspaceController.optometryOnScreen == screenIdx
-        ) return
+        // The eye chart covers the whole view; nothing under it can be grabbed.
+        if (WorkspaceController.isOptometryOpen) return
         // Press-and-hold on an open drawer item arms a drag-to-desktop. Checked
         // ahead of window resize/drag because the drawer overlays everything on
         // its slot — a press in the drawer panel can't reach the windows below.
@@ -2479,7 +2474,10 @@ class WorkspaceRenderer(
         val px = cursorToRectPx(screen) ?: return
         // Modal panels (drawer / settings / audio / context menu itself) eat
         // the right-click — close the open modal and don't open a new one.
-        if (WorkspaceController.isOptometryOpen) return
+        if (WorkspaceController.isOptometryOpen) {
+            mainHandler.post { WorkspaceController.setOptometryOpen(false) }
+            return
+        }
         if (WorkspaceController.isDrawerOpen || WorkspaceController.isSettingsOpen ||
             WorkspaceController.isAudioOpen || WorkspaceController.isContextMenuOpen
         ) {
@@ -2581,9 +2579,7 @@ class WorkspaceRenderer(
             WorkspaceController.isDrawerOpen && WorkspaceController.drawerOnScreen == screenIdx
         ) || (
             WorkspaceController.isSettingsOpen && WorkspaceController.settingsOnScreen == screenIdx
-        ) || (
-            WorkspaceController.isOptometryOpen && WorkspaceController.optometryOnScreen == screenIdx
-        )
+        ) || WorkspaceController.isOptometryOpen
         if (anyModalHere) {
             Log.i("UxSpace/DrawerDrag", "tryArmDesktop abort: modal open on slot $screenIdx")
             return false
@@ -2654,6 +2650,11 @@ class WorkspaceRenderer(
     }
 
     private fun handleClick() {
+        // The eye chart covers the whole view; a click anywhere closes it.
+        if (WorkspaceController.isOptometryOpen) {
+            mainHandler.post { WorkspaceController.setOptometryOpen(false) }
+            return
+        }
         // A click while a drag is in flight resolves the drag instead of routing
         // into any window/Presentation. Dropping on a slot's wallpaper area
         // pins a shortcut; dropping anywhere else (taskbar, drawer, a window)
@@ -2719,9 +2720,6 @@ class WorkspaceRenderer(
             ) || (
             WorkspaceController.isAudioOpen &&
                 WorkspaceController.audioOnScreen == screenIdx
-            ) || (
-            WorkspaceController.isOptometryOpen &&
-                WorkspaceController.optometryOnScreen == screenIdx
             )
         // Window hit only when no modal is open. The window's chrome lives in the
         // slot's Presentation view tree (so its buttons work via dispatchTap);
@@ -2811,6 +2809,10 @@ class WorkspaceRenderer(
      * gets the scroll naturally via the same input-injection path — no special case.
      */
     private fun handleScroll(dyFraction: Float) {
+        if (WorkspaceController.isOptometryOpen) {
+            eyeChart.scroll(dyFraction)
+            return
+        }
         val vScroll = dyFraction * WorkspaceController.scrollSensitivity
         val screenIdx = screenIndexUnderCursor() ?: return
         val screen = layout.screens[screenIdx]
@@ -2825,9 +2827,6 @@ class WorkspaceRenderer(
             ) || (
             WorkspaceController.isAudioOpen &&
                 WorkspaceController.audioOnScreen == screenIdx
-            ) || (
-            WorkspaceController.isOptometryOpen &&
-                WorkspaceController.optometryOnScreen == screenIdx
             )
         if (!anyModalOpen) {
             val window = windowOnSlotAt(screenIdx, px[0], px[1])
@@ -2883,6 +2882,7 @@ class WorkspaceRenderer(
      */
     private fun handlePinch(scale: Float) {
         if (scale == 1f) return
+        if (WorkspaceController.isOptometryOpen) return
         if (!WorkspaceController.pinchEnabled) return
         when (viewMode) {
             ViewMode.FREE, ViewMode.PINNED -> applyCursorAnchoredZoom(scale)
@@ -3263,6 +3263,35 @@ class WorkspaceRenderer(
      * (so back-to-back same-layout cycles are free); fade is left as a hard cut for
      * V1.
      */
+    /** Head-locked eye chart (docs/OPTOMETRY.md); drawn via [drawFullscreenHud]. */
+    private val eyeChart = EyeChartOverlay(::drawFullscreenHud)
+
+    /** Draw a GL_TEXTURE_2D opaquely over the whole current viewport with the HUD quad. */
+    private fun drawFullscreenHud(textureId: Int) {
+        GLES20.glDisable(GLES20.GL_DEPTH_TEST)
+        GLES20.glDisable(GLES20.GL_BLEND)
+        GLES20.glUseProgram(hudProgram)
+        hudQuad.position(0)
+        GLES20.glVertexAttribPointer(
+            hudAPosition, 2, GLES20.GL_FLOAT, false, HUD_STRIDE_BYTES, hudQuad,
+        )
+        hudQuad.position(2)
+        GLES20.glVertexAttribPointer(
+            hudATexCoord, 2, GLES20.GL_FLOAT, false, HUD_STRIDE_BYTES, hudQuad,
+        )
+        GLES20.glEnableVertexAttribArray(hudAPosition)
+        GLES20.glEnableVertexAttribArray(hudATexCoord)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
+        GLES20.glUniform1i(hudUTexture, 0)
+        GLES20.glUniform2f(hudUCenter, 0f, 0f)
+        GLES20.glUniform2f(hudUHalfSize, 1f, 1f)
+        GLES20.glUniform4f(hudUColor, 1f, 1f, 1f, 1f)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, QUAD_VERTEX_COUNT)
+        GLES20.glDisableVertexAttribArray(hudAPosition)
+        GLES20.glDisableVertexAttribArray(hudATexCoord)
+    }
+
     private fun drawLayoutAnnouncement() {
         val text = WorkspaceController.layoutAnnouncement ?: return
         val expiresAt = WorkspaceController.layoutAnnouncementExpiresAtMs

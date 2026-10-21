@@ -809,38 +809,22 @@ object WorkspaceController {
     @Volatile
     private var optometryOpenState = false
 
-    /** Whether the eye chart (docs/OPTOMETRY.md) is showing on some screen. */
+    /**
+     * Whether the eye chart (docs/OPTOMETRY.md) is up. It's a head-locked overlay drawn by
+     * the renderer over the whole glasses view — not on any screen — and while it's up
+     * the renderer sends the wheel to its text size and closes it on a click.
+     */
     val isOptometryOpen: Boolean get() = optometryOpenState
 
-    /** Index of the screen showing the eye chart, or −1 when closed. */
-    @Volatile
-    var optometryOnScreen: Int = -1
-        private set
-
-    private val optometryStateListeners =
-        java.util.concurrent.CopyOnWriteArrayList<(open: Boolean, screenIdx: Int) -> Unit>()
-
-    fun addOptometryStateListener(listener: (open: Boolean, screenIdx: Int) -> Unit) {
-        optometryStateListeners.add(listener)
-    }
-
-    fun removeOptometryStateListener(listener: (open: Boolean, screenIdx: Int) -> Unit) {
-        optometryStateListeners.remove(listener)
-    }
-
-    /**
-     * Show / hide the eye chart on [screenIdx]. It covers the whole screen — windows,
-     * taskbar and all — so opening it closes any other panel. The renderer draws the
-     * screen's full surface over its windows and routes every click to it while open.
-     */
-    fun setOptometryOpen(open: Boolean, screenIdx: Int = 0) {
-        if (open == optometryOpenState && (!open || screenIdx == optometryOnScreen)) return
-        if (open && drawerOpenState) setDrawerOpen(false, screenIdx)
-        if (open && settingsOpenState) setSettingsOpen(false, screenIdx)
-        if (open && audioOpenState) setAudioOpen(false, screenIdx)
+    /** Show / hide the eye chart. Opening it closes any open panel. */
+    fun setOptometryOpen(open: Boolean) {
+        if (open == optometryOpenState) return
+        if (open) {
+            if (drawerOpenState) setDrawerOpen(false)
+            if (settingsOpenState) setSettingsOpen(false)
+            if (audioOpenState) setAudioOpen(false)
+        }
         optometryOpenState = open
-        optometryOnScreen = if (open) screenIdx else -1
-        optometryStateListeners.forEach { runCatching { it(open, screenIdx) } }
     }
 
     /**

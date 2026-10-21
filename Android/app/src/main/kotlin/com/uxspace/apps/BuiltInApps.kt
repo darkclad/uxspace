@@ -30,10 +30,14 @@ object BuiltInApps {
         ),
     )
 
-    /** Open the built-in tool [packageName] on [screenIdx]. */
+    /**
+     * Open the built-in tool [packageName]. [screenIdx] is the screen it was launched
+     * from; the eye chart ignores it (it covers the whole view, not one screen).
+     */
+    @Suppress("UNUSED_PARAMETER")
     fun launch(packageName: String, screenIdx: Int) {
         when (packageName) {
-            EYE_CHART -> WorkspaceController.setOptometryOpen(true, screenIdx)
+            EYE_CHART -> WorkspaceController.setOptometryOpen(true)
         }
     }
 
