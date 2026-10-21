@@ -101,7 +101,6 @@ internal class EyeChartOverlay(
         canvas.drawColor(if (inverted) Color.BLACK else Color.WHITE)
 
         val footerH = (height * FOOTER_FRACTION).roundToInt()
-        val margin = (width * MARGIN_FRACTION).roundToInt()
 
         val xHeightPx = PX_PER_DEGREE * (5f / 60f) * denominator / 20f
         val body = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -117,16 +116,19 @@ internal class EyeChartOverlay(
             strokeWidth = 1f
             color = if (inverted) FRAME_ON_BLACK else FRAME_ON_WHITE
         }
-        val pad = (width * BOX_PADDING_FRACTION).roundToInt()
-        boxes(width, height - footerH, margin).forEachIndexed { i, box ->
+        val boxes = boxes(width, height, footerH)
+        boxes.forEachIndexed { i, box ->
             canvas.drawRect(box, frame)
             // Each box starts at a different point in the text so they don't read alike.
-            drawText(canvas, box, pad, body, startAt = i * LOREM.length / BOX_COUNT)
+            drawText(canvas, box, BOX_PADDING_PX, body, startAt = i * LOREM.length / BOX_COUNT)
         }
 
-        // Footer: what size this is and how to drive it, at a fixed readable size.
+        // Footer under the centre box only, so the corners keep their text right out to
+        // the edges: what size this is and how to drive it, at a fixed readable size.
+        val centre = boxes[CENTRE]
+        val footerTop = centre.bottom.toFloat()
         val footerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = FOOTER_BG }
-        canvas.drawRect(0f, (height - footerH).toFloat(), width.toFloat(), height.toFloat(), footerPaint)
+        canvas.drawRect(centre.left.toFloat(), footerTop, centre.right.toFloat(), height.toFloat(), footerPaint)
         val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -138,32 +140,30 @@ internal class EyeChartOverlay(
         }
         val baseline = height - footerH / 2f + label.textSize * 0.36f
         val acuity = "20/$denominator"
-        canvas.drawText(acuity, margin.toFloat(), baseline, label)
-        canvas.drawText(
-            "Scroll to change the size and turn the focus wheel until it's sharp. " +
-                "Click to invert colours, right-click to close.",
-            margin + label.measureText(acuity) + footerH * 0.6f,
-            baseline,
-            hint,
-        )
+        val help = "Scroll: size · Click: invert · Right-click: close"
+        val gap = footerH * 0.5f
+        var x = centre.exactCenterX() - (label.measureText(acuity) + gap + hint.measureText(help)) / 2f
+        canvas.drawText(acuity, x, baseline, label)
+        x += label.measureText(acuity) + gap
+        canvas.drawText(help, x, baseline, hint)
         return bmp
     }
 
     /**
-     * The five text boxes in a [width] × [height] page: one per corner and a centre box
-     * spanning nearly the full height between them, the largest of the five.
+     * The five text boxes, tiling the whole [width] × [height] page edge to edge with no
+     * margins (the corners are where focus matters most and is hardest): the left and
+     * right columns split into top and bottom halves, and the centre column, the widest,
+     * runs full height above a [footerH] strip.
      */
-    private fun boxes(width: Int, height: Int, margin: Int): List<Rect> {
-        val m = margin
+    private fun boxes(width: Int, height: Int, footerH: Int): List<Rect> {
         val cornerW = (width * CORNER_W_FRACTION).roundToInt()
-        val cornerH = (height * CORNER_H_FRACTION).roundToInt()
-        val gap = (width * BOX_GAP_FRACTION).roundToInt()
+        val half = height / 2
         return listOf(
-            Rect(m, m, m + cornerW, m + cornerH),
-            Rect(width - m - cornerW, m, width - m, m + cornerH),
-            Rect(m + cornerW + gap, m, width - m - cornerW - gap, height - m),
-            Rect(m, height - m - cornerH, m + cornerW, height - m),
-            Rect(width - m - cornerW, height - m - cornerH, width - m, height - m),
+            Rect(0, 0, cornerW, half),
+            Rect(width - cornerW, 0, width, half),
+            Rect(cornerW, 0, width - cornerW, height - footerH),
+            Rect(0, half, cornerW, height),
+            Rect(width - cornerW, half, width, height),
         )
     }
 
@@ -229,15 +229,15 @@ internal class EyeChartOverlay(
         const val STEP_COOLDOWN_MS = 150L
 
         const val LINE_SPACING = 1.35f
-        const val MARGIN_FRACTION = 0.02f
         const val FOOTER_FRACTION = 0.06f
 
-        /** Box layout, as fractions of the page above the footer. */
+        /** Box layout: each corner column is this fraction of the page width. */
         const val BOX_COUNT = 5
-        const val CORNER_W_FRACTION = 0.27f
-        const val CORNER_H_FRACTION = 0.40f
-        const val BOX_GAP_FRACTION = 0.015f
-        const val BOX_PADDING_FRACTION = 0.008f
+        const val CENTRE = 2
+        const val CORNER_W_FRACTION = 0.28f
+
+        /** Text inset from a box's frame, kept tiny so text reaches the view's edges. */
+        const val BOX_PADDING_PX = 4
 
         const val FRAME_ON_WHITE = 0xFFB9B8BD.toInt()
         const val FRAME_ON_BLACK = 0xFF4A494E.toInt()

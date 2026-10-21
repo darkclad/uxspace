@@ -22,10 +22,11 @@ activity, and it can't be dragged out as a window.
 
 The chart takes the **whole glasses view**: a head-locked page drawn by the renderer
 over everything, regardless of zoom, FREE/pinned mode or the screen layout. The page is
-black lorem-ipsum text on white in **five framed boxes**: one in each corner and a large
-centre box spanning nearly the full height between them. The glasses' optics blur the
-corners differently from the middle, so the user can check focus across the whole field.
-A footer shows the current size ("20/40") and how to drive it.
+black lorem-ipsum text on white in **five framed boxes tiling the view edge to edge,
+with no margins**: the left and right columns split into top and bottom corner boxes,
+and the widest centre column runs full height between them. Corners matter most: the
+glasses' optics blur them first, so text runs right out to every edge. A small footer
+under the centre box only shows the current size ("20/40") and the controls.
 
 - **Wheel / two-finger scroll** steps the size **5 at a time** in the 20/x denominator
   (20/40 → 20/45 → 20/50 …), at most one step every 150 ms however many ticks a notch
