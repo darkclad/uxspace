@@ -20,8 +20,11 @@ import kotlin.math.roundToInt
  * user rolls the wheel to change the text size and turns the focus wheels until the
  * smallest size they can read is sharp; a click closes it.
  *
- * Text size is a real visual angle: a capital is 5 arcmin × 10^[logMar] tall at the
+ * Text size is a real visual angle, sized the way reading charts (MNREAD, "M" print
+ * sizes) size running text: the lowercase x-height is 5 arcmin × 10^[logMar] at the
  * glasses' [PX_PER_DEGREE], so the footer's "20/x" is the acuity that size tests.
+ * (Snellen's 5 arcmin is a capital's height; lorem is lowercase, so sizing by capitals
+ * would make every line read ~1.5 chart lines smaller than its label.)
  *
  * [WorkspaceRenderer] owns the GL state; this class only keeps the page texture up to
  * date. All methods run on the GL thread.
@@ -81,14 +84,14 @@ internal class EyeChartOverlay(
         val margin = (width * MARGIN_FRACTION).roundToInt()
 
         // Body: lorem ipsum filling everything above the footer.
-        val capPx = PX_PER_DEGREE * (5f / 60f) * 10f.pow(logMar)
+        val xHeightPx = PX_PER_DEGREE * (5f / 60f) * 10f.pow(logMar)
         val body = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = INK
             typeface = Typeface.create("sans-serif", Typeface.NORMAL)
             textSize = 100f
             val bounds = Rect()
-            getTextBounds("H", 0, 1, bounds)
-            textSize = 100f * capPx / bounds.height()
+            getTextBounds("x", 0, 1, bounds)
+            textSize = 100f * xHeightPx / bounds.height()
         }
         // Just enough lorem to fill the page at this size (20/20 needs ~100k chars).
         val textW = width - 2 * margin
@@ -165,7 +168,7 @@ internal class EyeChartOverlay(
         /** Opening size: 20/40. */
         const val START_LOG_MAR = 0.3f
 
-        /** 20/20 (≈4 px capitals here; smaller is below what the panel can draw). */
+        /** 20/20 (≈4 px x-height here, about the finest the panel can draw). */
         const val MIN_LOG_MAR = 0f
 
         /** 20/200. */

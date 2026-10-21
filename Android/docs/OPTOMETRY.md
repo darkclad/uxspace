@@ -33,11 +33,14 @@ The user scrolls to the smallest size they can still read, then turns the focus 
 until it is sharp. Text instead of isolated letters makes blur obvious across the whole
 field, not just the centre.
 
-**Sizes are real visual angles.** A capital is 5 arcmin × 10^logMAR tall at
-`EyeChartOverlay.PX_PER_DEGREE` (44: VITURE's 1920-px panel spans ~44°), so 20/40 is
-~7 px and 20/20 ~4 px, which is about the finest the panel can draw. The page texture
-is drawn 1:1 to the glasses' pixels with nearest-neighbour sampling, so the renderer
-adds no blur of its own.
+**Sizes are real visual angles**, measured the way reading charts (MNREAD, "M" print
+sizes) measure running text: the lowercase **x-height** is 5 arcmin × 10^logMAR at
+`EyeChartOverlay.PX_PER_DEGREE` (44: VITURE's 1920-px panel spans ~44°). Snellen's
+5 arcmin is a *capital's* height; sizing lowercase lorem by capitals made every line read
+about 1.5 chart lines smaller than its label. 20/40 is a ~7 px x-height, 20/20 ~4 px,
+which is about the finest the panel can draw. Its strokes are under a pixel, so 20/20 is
+a resolution limit, not a reading target. The page texture is drawn 1:1 to the glasses'
+pixels with nearest-neighbour sampling, so the renderer adds no blur of its own.
 
 ## Per-eye masking (not built)
 
