@@ -1232,7 +1232,6 @@ class DesktopPresentation(
         /** Alpha applied to non-focused windows' chrome + frame views. */
         const val UNFOCUSED_CHROME_ALPHA = 0.55f
 
-        /** Translucent white for the left-cluster divider — a quarter-strength rule line. */
         /**
          * Taskbar geometry (dp). Height stays 58 dp because the renderer reserves that
          * band below windows (`WorkspaceRenderer.WINDOW_TASKBAR_PX` = 58 dp at the slot's

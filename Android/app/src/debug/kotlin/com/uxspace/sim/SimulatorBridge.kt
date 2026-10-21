@@ -34,6 +34,7 @@ import kotlin.math.sin
  *  - `recenter` — the toolbar's align-to-head.
  *  - `layout` — cycle the multi-screen layout (FREE mode only).
  *  - `panel drawer|settings|audio|close` — open a desktop panel on the main screen.
+ *  - `launch <package>` — open an app's launcher activity as a workspace window.
  *  - `move <dx> <dy>` — cursor delta as a fraction of the touchpad (like a trackpad swipe).
  *  - `click`, `rclick`, `scroll <dy>`.
  *  - `pair <code>` — the Wireless debugging pairing code, as if typed into the pairing
@@ -113,6 +114,12 @@ class SimulatorBridge : ContentProvider() {
                     else -> return "err usage: panel drawer|settings|audio|close"
                 }
                 main.post(open)
+            }
+            "launch" -> {
+                val pkg = args.getOrNull(1) ?: return "err usage: launch <package>"
+                val launch = context?.packageManager?.getLaunchIntentForPackage(pkg)?.component
+                    ?: return "err no launcher activity for $pkg"
+                main.post { WorkspaceController.launchApp(pkg, launch.className, pkg.substringAfterLast('.')) }
             }
             "move" -> WorkspaceController.moveCursor(f(1), f(2))
             "click" -> WorkspaceController.click()

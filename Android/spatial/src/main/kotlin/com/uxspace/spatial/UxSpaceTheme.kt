@@ -8,14 +8,29 @@ package com.uxspace.spatial
  */
 object UxSpaceTheme {
 
-    /** Window border: the light-grey frame around an app, à la a desktop OS window. */
-    const val windowBorder: Int = 0xFFEAEAEA.toInt()
+    /**
+     * Window border: the ring around an app. Same tone as the title bar so caption and
+     * frame read as one dark shell around the app's content.
+     */
+    const val windowBorder: Int = 0xFF2D2D30.toInt()
 
-    /** Window title bar background — its own entry; currently the same grey as the border. */
-    const val windowTitleBar: Int = 0xFFEAEAEA.toInt()
+    /** Window title bar (caption) background. */
+    const val windowTitleBar: Int = 0xFF2D2D30.toInt()
 
-    /** Text and button glyphs drawn on the (light) window frame. */
-    const val windowFrameText: Int = 0xFF2B2B2B.toInt()
+    /** Caption button glyphs on the dark frame. */
+    const val windowFrameText: Int = 0xFFC7C7CC.toInt()
+
+    /** App name in the caption — a step brighter than the button glyphs. */
+    const val windowTitleText: Int = 0xFFE6E5EA.toInt()
+
+    /** Disc behind the caption's Close glyph. */
+    const val windowCloseDisc: Int = 0xFF4B4B4F.toInt()
+
+    /** Close glyph, on [windowCloseDisc]. */
+    const val windowCloseGlyph: Int = 0xFFF3F3F9.toInt()
+
+    /** Pressed caption button. */
+    const val windowButtonPressed: Int = 0x26FFFFFF
 
     /**
      * Background for the floating chrome toolbar shown over an app window in
@@ -25,10 +40,10 @@ object UxSpaceTheme {
      * view under the chrome rect, so this opaque tone mimics the look of a
      * translucent dark panel.
      */
-    const val windowChromeCompactBg: Int = 0xFF1A1F2A.toInt()
+    const val windowChromeCompactBg: Int = windowTitleBar
 
     /** Icon tint for the compact (fullscreen) chrome — light on dark. */
-    const val windowChromeCompactIcon: Int = 0xFFE6E6E6.toInt()
+    const val windowChromeCompactIcon: Int = windowFrameText
 
     // Desktop shell — taskbar + app drawer. A dark, slightly warm-neutral scheme with
     // translucent surfaces over the wallpaper and hairline light strokes, measured off a

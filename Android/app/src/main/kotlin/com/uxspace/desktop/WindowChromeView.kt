@@ -3,7 +3,12 @@ package com.uxspace.desktop
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.PorterDuff
+import android.graphics.Typeface
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.LayerDrawable
+import android.graphics.drawable.StateListDrawable
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
@@ -96,7 +101,7 @@ class WindowChromeView(context: Context) : FrameLayout(context) {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(UxSpaceTheme.windowTitleBar)
-            setPadding(dp(10), 0, 0, 0)
+            setPadding(dp(12), 0, dp(4), 0)
             setOnTouchListener { _, ev -> titleGesture.onTouchEvent(ev) }
         }
         titleIcon = ImageView(context).apply {
@@ -104,20 +109,21 @@ class WindowChromeView(context: Context) : FrameLayout(context) {
         }
         titleBar.addView(
             titleIcon,
-            LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(10) },
+            LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(10) },
         )
         titleLabel = TextView(context).apply {
-            setTextColor(UxSpaceTheme.windowFrameText)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextColor(UxSpaceTheme.windowTitleText)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
-            gravity = Gravity.CENTER
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
         }
         titleBar.addView(titleLabel, LinearLayout.LayoutParams(0, MATCH, 1f))
         titleBack = chromeButton(R.drawable.ic_back, "Back") { fireBack() }
         titleMin = chromeButton(R.drawable.ic_minimize, "Minimize") { fireMinimize() }
         titleMax = chromeButton(R.drawable.ic_maximize, "Maximize") { fireMaximize() }
-        titleClose = chromeButton(R.drawable.ic_close, "Close") { fireClose() }
+        titleClose = chromeButton(R.drawable.ic_close, "Close", close = true) { fireClose() }
         titleBar.addView(titleBack)
         titleBar.addView(titleMin)
         titleBar.addView(titleMax)
@@ -133,7 +139,7 @@ class WindowChromeView(context: Context) : FrameLayout(context) {
         toolBack = chromeButton(R.drawable.ic_back, "Back") { fireBack() }
         toolMin = chromeButton(R.drawable.ic_minimize, "Minimize") { fireMinimize() }
         toolMax = chromeButton(R.drawable.ic_fullscreen_exit, "Maximize") { fireMaximize() }
-        toolClose = chromeButton(R.drawable.ic_close, "Close") { fireClose() }
+        toolClose = chromeButton(R.drawable.ic_close, "Close", close = true) { fireClose() }
         toolbar.addView(toolBack)
         toolbar.addView(toolMin)
         toolbar.addView(toolMax)
@@ -190,8 +196,9 @@ class WindowChromeView(context: Context) : FrameLayout(context) {
         // Re-tint the visible row's buttons. setImageTintList alone isn't
         // reliable when the vector drawable cache hands us a shared
         // ConstantState, so we also mutate + setColorFilter as a belt-and-braces.
-        tintRow(titleBack, titleMin, titleMax, titleClose, color = UxSpaceTheme.windowFrameText)
-        tintRow(toolBack, toolMin, toolMax, toolClose, color = UxSpaceTheme.windowChromeCompactIcon)
+        tintRow(titleBack, titleMin, titleMax, color = UxSpaceTheme.windowFrameText)
+        tintRow(toolBack, toolMin, toolMax, color = UxSpaceTheme.windowChromeCompactIcon)
+        tintRow(titleClose, toolClose, color = UxSpaceTheme.windowCloseGlyph)
     }
 
     private fun fireBack() = packageName?.let { listener?.onBack(it) }
@@ -212,18 +219,20 @@ class WindowChromeView(context: Context) : FrameLayout(context) {
     private fun chromeButton(
         iconRes: Int,
         description: String,
+        close: Boolean = false,
         onClick: () -> Unit,
     ): ImageButton = ImageButton(context).apply {
-        val ripple = TypedValue()
-        context.theme.resolveAttribute(
-            android.R.attr.selectableItemBackgroundBorderless, ripple, true,
-        )
-        setBackgroundResource(ripple.resourceId)
+        background = buttonBackground(close)
         setImageResource(iconRes)
-        imageTintList = ColorStateList.valueOf(UxSpaceTheme.windowFrameText)
+        imageTintList = ColorStateList.valueOf(
+            if (close) UxSpaceTheme.windowCloseGlyph else UxSpaceTheme.windowFrameText,
+        )
         contentDescription = description
         scaleType = ImageView.ScaleType.FIT_CENTER
-        setPadding(0, 0, 0, 0)
+        // Glyph ≈ 15 dp tall inside the 21 dp button; Close's is smaller so it sits
+        // inside its disc.
+        val padV = dp(if (close) 5 else 3)
+        setPadding(0, padV, 0, padV)
         setOnClickListener { onClick() }
         // Fixed height (smaller than the chrome strip), so the parent
         // LinearLayout's gravity = CENTER actually has slack to centre the
@@ -232,6 +241,33 @@ class WindowChromeView(context: Context) : FrameLayout(context) {
         // symmetric margins. Now the *button* is centred as a whole, and the
         // icon fills the button.
         layoutParams = LinearLayout.LayoutParams(dp(BUTTON_WIDTH_DP), dp(BUTTON_HEIGHT_DP))
+    }
+
+    /**
+     * Rounded highlight while pressed; Close additionally sits on a round disc, inset
+     * so it stays circular inside the wider-than-tall button.
+     */
+    private fun buttonBackground(close: Boolean): Drawable {
+        val pressed = StateListDrawable().apply {
+            addState(
+                intArrayOf(android.R.attr.state_pressed),
+                GradientDrawable().apply {
+                    cornerRadius = dp(6).toFloat()
+                    setColor(UxSpaceTheme.windowButtonPressed)
+                },
+            )
+        }
+        if (!close) return pressed
+        val discDp = BUTTON_HEIGHT_DP - 2
+        val disc = InsetDrawable(
+            GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(UxSpaceTheme.windowCloseDisc)
+            },
+            dp((BUTTON_WIDTH_DP - discDp) / 2), dp(1),
+            dp((BUTTON_WIDTH_DP - discDp) / 2), dp(1),
+        )
+        return LayerDrawable(arrayOf(disc, pressed))
     }
 
     private companion object {
