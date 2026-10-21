@@ -45,7 +45,7 @@ import kotlin.math.sin
  *  - `hotkey <name>` — fire a Ctrl+Alt hotkey as the helper would, by its
  *    `PrivilegedHotkeys.HK_<name>` suffix (e.g. `hotkey tile_left`).
  *  - `move <dx> <dy>` — cursor delta as a fraction of the touchpad (like a trackpad swipe).
- *  - `click`, `rclick`, `scroll <dy>`.
+ *  - `click`, `rclick`, `longpress` (the touchpad's long-press), `scroll <dy>`.
  *  - `pair <code>` — the Wireless debugging pairing code, as if typed into the pairing
  *    notification; replies once pairing finishes. `state` — the privileged helper's state.
  *
@@ -272,6 +272,7 @@ class SimulatorBridge : ContentProvider() {
             "move" -> WorkspaceController.moveCursor(f(1), f(2))
             "click" -> WorkspaceController.click()
             "rclick" -> WorkspaceController.requestRightClick()
+            "longpress" -> WorkspaceController.longPress()
             "scroll" -> WorkspaceController.scroll(f(1))
             "pair" -> {
                 val code = args.getOrNull(1)?.filter(Char::isDigit)

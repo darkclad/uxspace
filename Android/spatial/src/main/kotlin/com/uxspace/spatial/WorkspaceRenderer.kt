@@ -970,6 +970,10 @@ class WorkspaceRenderer(
         areaW = areaW.coerceAtLeast(1)
         areaH = areaH.coerceAtLeast(1)
         GLES20.glViewport((surfaceWidth - areaW) / 2, (surfaceHeight - areaH) / 2, areaW, areaH)
+        bandRect[0] = (surfaceWidth - areaW) / 2
+        bandRect[1] = (surfaceHeight - areaH) / 2
+        bandRect[2] = areaW
+        bandRect[3] = areaH
 
         surfaceAspect = areaW.toFloat() / areaH.toFloat()
         Matrix.perspectiveM(projection, 0, FOV_Y_DEGREES, surfaceAspect, NEAR_PLANE, FAR_PLANE)
@@ -1190,9 +1194,11 @@ class WorkspaceRenderer(
         if (WorkspaceController.legendVisible) drawLegend()
         drawLayoutAnnouncement()
         if (WorkspaceController.isOptometryOpen) {
-            // Head-locked over everything; no cursor, since a click anywhere acts on it.
+            // Head-locked over everything. The cursor only shows while the long-press
+            // menu is up; otherwise a click anywhere acts on the chart.
             eyeChart.draw(surfaceWidth, surfaceHeight)
             applyBand()
+            if (eyeChart.isMenuOpen) drawCursor()
         } else {
             eyeChart.release()
             drawCursor()
@@ -2573,7 +2579,12 @@ class WorkspaceRenderer(
         // Modal panels (drawer / settings / audio / context menu itself) eat
         // the right-click — close the open modal and don't open a new one.
         if (WorkspaceController.isOptometryOpen) {
-            mainHandler.post { WorkspaceController.setOptometryOpen(false) }
+            // Mouse right-click: dismiss the eye chart's menu, else close the chart.
+            if (eyeChart.isMenuOpen) {
+                eyeChart.closeMenu()
+            } else {
+                mainHandler.post { WorkspaceController.setOptometryOpen(false) }
+            }
             return
         }
         if (WorkspaceController.isDrawerOpen || WorkspaceController.isSettingsOpen ||
@@ -2645,6 +2656,12 @@ class WorkspaceRenderer(
      * an open drawer's cell, where it arms a drag-from-drawer.
      */
     private fun handleLongPress() {
+        // Eye chart: a long-press (the touchpad's only "menu" gesture) opens its menu.
+        if (WorkspaceController.isOptometryOpen) {
+            val p = cursorSurfacePx()
+            eyeChart.openMenu(p[0], p[1])
+            return
+        }
         val screenIdx = screenIndexUnderCursor()
         if (screenIdx == null) {
             Log.i("UxSpace/DrawerDrag", "handleLongPress: cursor not over any screen — abort")
@@ -2750,10 +2767,17 @@ class WorkspaceRenderer(
     }
 
     private fun handleClick() {
-        // The eye chart covers the whole view; a click anywhere swaps its colours
-        // (right-click closes it, see handleRightClick).
+        // The eye chart covers the whole view: a click picks a menu item while its
+        // long-press menu is up, and otherwise swaps the chart's colours.
         if (WorkspaceController.isOptometryOpen) {
-            eyeChart.toggleInverted()
+            if (eyeChart.isMenuOpen) {
+                val p = cursorSurfacePx()
+                if (eyeChart.clickMenu(p[0], p[1]) == EyeChartOverlay.MenuItem.CLOSE) {
+                    mainHandler.post { WorkspaceController.setOptometryOpen(false) }
+                }
+            } else {
+                eyeChart.toggleInverted()
+            }
             return
         }
         // A click while a drag is in flight resolves the drag instead of routing
@@ -3375,6 +3399,16 @@ class WorkspaceRenderer(
      */
     /** Head-locked eye chart (docs/OPTOMETRY.md); drawn via [drawFullscreenHud]. */
     private val eyeChart = EyeChartOverlay(::drawFullscreenHud)
+
+    /** The render band's viewport (x, y from bottom-left, w, h) in surface px. */
+    private val bandRect = IntArray(4)
+
+    /** The cursor in full-surface pixels, top-down — the eye chart's coordinate space. */
+    private fun cursorSurfacePx(): FloatArray {
+        val x = bandRect[0] + (cursorX + 1f) / 2f * bandRect[2]
+        val yUp = bandRect[1] + (cursorY + 1f) / 2f * bandRect[3]
+        return floatArrayOf(x, surfaceHeight - yUp)
+    }
 
     /** Draw a GL_TEXTURE_2D opaquely over the whole current viewport with the HUD quad. */
     private fun drawFullscreenHud(textureId: Int) {

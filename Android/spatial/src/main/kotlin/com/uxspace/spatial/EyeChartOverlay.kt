@@ -20,7 +20,9 @@ import kotlin.math.roundToInt
  * the field, where the optics differ, not just in the middle. The user rolls the wheel
  * to change the text size and turns the focus wheels until the smallest size they can
  * read is sharp. A click swaps black-on-white for white-on-black
- * (dark text on a bright field and the reverse blur differently); a right-click closes it.
+ * (dark text on a bright field and the reverse blur differently). A long-press opens a
+ * small menu at the cursor (larger / smaller text, invert, close) — the phone touchpad
+ * has no right-click — and a mouse right-click closes the chart directly.
  *
  * Text size is a real visual angle, sized the way reading charts (MNREAD, "M" print
  * sizes) size running text: the lowercase x-height is 5 arcmin × [denominator]/20 at
@@ -42,13 +44,35 @@ internal class EyeChartOverlay(
     private var lastStepMs = 0L
 
     private var textureId = 0
-    private var textureW = 0
-    private var textureH = 0
-    private var textureDenominator = 0
+
+    /** The rendered page, kept so the menu can be drawn over a copy without re-laying text. */
+    private var page: Bitmap? = null
+    private var pageDenominator = 0
+    private var pageInverted = false
+
+    /** What the texture currently shows: page + menu state it was built from. */
+    private var textureMenuAt: Rect? = null
+    private var textureStale = true
 
     /** White text on black instead of black on white. */
     private var inverted = false
-    private var textureInverted = false
+
+    /** Long-press menu: where it's anchored (surface px), or null when closed. */
+    private var menuAnchor: android.graphics.PointF? = null
+
+    /** Each menu item's hit rectangle (surface px), from the last render. */
+    private val menuHits = mutableListOf<Pair<MenuItem, Rect>>()
+
+    /** The long-press menu's actions. */
+    enum class MenuItem(val label: String) {
+        LARGER("Larger text"),
+        SMALLER("Smaller text"),
+        INVERT("Invert colours"),
+        CLOSE("Close eye chart"),
+    }
+
+    /** Whether the long-press menu is up (the renderer draws the cursor while it is). */
+    val isMenuOpen: Boolean get() = menuAnchor != null
 
     /**
      * Wheel / two-finger scroll: up makes the text bigger, down smaller — one
@@ -61,8 +85,12 @@ internal class EyeChartOverlay(
         val now = android.os.SystemClock.uptimeMillis()
         if (now - lastStepMs < STEP_COOLDOWN_MS) return
         lastStepMs = now
-        val step = if (dyFraction > 0f) STEP_DENOMINATOR else -STEP_DENOMINATOR
-        denominator = (denominator + step).coerceIn(MIN_DENOMINATOR, MAX_DENOMINATOR)
+        step(if (dyFraction > 0f) 1 else -1)
+    }
+
+    private fun step(direction: Int) {
+        denominator = (denominator + direction * STEP_DENOMINATOR)
+            .coerceIn(MIN_DENOMINATOR, MAX_DENOMINATOR)
     }
 
     /** Swap black-on-white ↔ white-on-black. */
@@ -70,16 +98,60 @@ internal class EyeChartOverlay(
         inverted = !inverted
     }
 
+    /** Open the long-press menu at surface pixel ([x], [y]). */
+    fun openMenu(x: Float, y: Float) {
+        menuAnchor = android.graphics.PointF(x, y)
+        textureStale = true
+    }
+
+    fun closeMenu() {
+        if (menuAnchor == null) return
+        menuAnchor = null
+        textureStale = true
+    }
+
+    /**
+     * A click at surface pixel ([x], [y]) while the menu is up: runs the item under it
+     * and returns it (the renderer closes the chart for [MenuItem.CLOSE]); a click
+     * outside the menu just dismisses it and returns null. Size and invert keep the
+     * menu open so they can be clicked repeatedly.
+     */
+    fun clickMenu(x: Float, y: Float): MenuItem? {
+        val item = menuHits.firstOrNull { (_, r) -> r.contains(x.toInt(), y.toInt()) }?.first
+        when (item) {
+            MenuItem.LARGER -> step(1)
+            MenuItem.SMALLER -> step(-1)
+            MenuItem.INVERT -> toggleInverted()
+            MenuItem.CLOSE, null -> closeMenu()
+        }
+        textureStale = true
+        return item
+    }
+
     /** Draw the page over the whole [width] × [height] surface. Leaves the viewport set to it. */
     fun draw(width: Int, height: Int) {
-        if (textureId == 0 || width != textureW || height != textureH ||
-            denominator != textureDenominator || inverted != textureInverted
+        val current = page
+        if (current == null || current.width != width || current.height != height ||
+            denominator != pageDenominator || inverted != pageInverted
         ) {
-            upload(render(width, height))
-            textureW = width
-            textureH = height
-            textureDenominator = denominator
-            textureInverted = inverted
+            current?.recycle()
+            page = render(width, height)
+            pageDenominator = denominator
+            pageInverted = inverted
+            textureStale = true
+        }
+        if (textureId == 0 || textureStale) {
+            val base = page!!
+            val anchor = menuAnchor
+            if (anchor == null) {
+                upload(base)
+            } else {
+                val withMenu = base.copy(Bitmap.Config.ARGB_8888, true)
+                drawMenu(Canvas(withMenu), anchor, width, height)
+                upload(withMenu)
+                withMenu.recycle()
+            }
+            textureStale = false
         }
         GLES20.glViewport(0, 0, width, height)
         drawFullscreen(textureId)
@@ -90,9 +162,70 @@ internal class EyeChartOverlay(
         if (textureId == 0) return
         GLES20.glDeleteTextures(1, intArrayOf(textureId), 0)
         textureId = 0
-        // Reopening starts fresh: default size, black on white.
+        page?.recycle()
+        page = null
+        // Reopening starts fresh: default size, black on white, no menu.
         denominator = START_DENOMINATOR
         inverted = false
+        menuAnchor = null
+        textureStale = true
+    }
+
+    /**
+     * The long-press menu: a dark card at [anchor] (flipped / clamped to stay on the
+     * surface), a header with the current size, then one row per [MenuItem]. Fixed,
+     * readable size regardless of the chart's text size.
+     */
+    private fun drawMenu(canvas: Canvas, anchor: android.graphics.PointF, width: Int, height: Int) {
+        val rowH = MENU_ROW_PX
+        val pad = MENU_PAD_PX
+        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = MENU_TEXT
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+            textSize = rowH * 0.45f
+        }
+        val header = Paint(text).apply {
+            color = MENU_HEADER
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
+        val items = MenuItem.values()
+        val headerText = "Text size 20/$denominator"
+        val cardW = (maxOf(header.measureText(headerText), items.maxOf { text.measureText(it.label) }) +
+            2 * MENU_TEXT_INSET_PX + 2 * pad).toInt()
+        val cardH = rowH * (items.size + 1) + 2 * pad
+        var left = anchor.x.toInt()
+        var top = anchor.y.toInt()
+        if (left + cardW > width) left -= cardW
+        if (top + cardH > height) top -= cardH
+        left = left.coerceIn(0, (width - cardW).coerceAtLeast(0))
+        top = top.coerceIn(0, (height - cardH).coerceAtLeast(0))
+
+        val card = android.graphics.RectF(
+            left.toFloat(), top.toFloat(), (left + cardW).toFloat(), (top + cardH).toFloat(),
+        )
+        canvas.drawRoundRect(card, MENU_CORNER_PX, MENU_CORNER_PX, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = MENU_BG })
+        canvas.drawRoundRect(
+            card, MENU_CORNER_PX, MENU_CORNER_PX,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = 1f
+                color = MENU_STROKE
+            },
+        )
+        val textX = left + pad + MENU_TEXT_INSET_PX.toFloat()
+        fun baseline(row: Int) = top + pad + row * rowH + rowH / 2f + text.textSize * 0.35f
+        canvas.drawText(headerText, textX, baseline(0), header)
+        menuHits.clear()
+        items.forEachIndexed { i, item ->
+            val row = i + 1
+            val rowTop = top + pad + row * rowH
+            canvas.drawLine(
+                (left + pad).toFloat(), rowTop.toFloat(), (left + cardW - pad).toFloat(), rowTop.toFloat(),
+                Paint().apply { color = MENU_STROKE },
+            )
+            canvas.drawText(item.label, textX, baseline(row), text)
+            menuHits += item to Rect(left + pad, rowTop, left + cardW - pad, rowTop + rowH)
+        }
     }
 
     private fun render(width: Int, height: Int): Bitmap {
@@ -140,7 +273,7 @@ internal class EyeChartOverlay(
         }
         val baseline = height - footerH / 2f + label.textSize * 0.36f
         val acuity = "20/$denominator"
-        val help = "Scroll: size · Click: invert · Right-click: close"
+        val help = "Scroll: size · Click: invert · Hold: menu"
         val gap = footerH * 0.5f
         var x = centre.exactCenterX() - (label.measureText(acuity) + gap + hint.measureText(help)) / 2f
         canvas.drawText(acuity, x, baseline, label)
@@ -203,7 +336,6 @@ internal class EyeChartOverlay(
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
         GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
-        bmp.recycle()
     }
 
     private companion object {
@@ -241,6 +373,16 @@ internal class EyeChartOverlay(
 
         const val FRAME_ON_WHITE = 0xFFB9B8BD.toInt()
         const val FRAME_ON_BLACK = 0xFF4A494E.toInt()
+
+        /** Long-press menu geometry (surface px) and colours — UxSpace's dark card. */
+        const val MENU_ROW_PX = 64
+        const val MENU_PAD_PX = 8
+        const val MENU_TEXT_INSET_PX = 20
+        const val MENU_CORNER_PX = 16f
+        const val MENU_BG = 0xFF242226.toInt()
+        const val MENU_STROKE = 0x33FFFFFF
+        const val MENU_TEXT = 0xFFF2F1F4.toInt()
+        const val MENU_HEADER = 0xFF9E9CA2.toInt()
 
         const val FOOTER_BG = 0xFF1B1A1D.toInt()
         const val FOOTER_HINT = 0xFFB4B2B8.toInt()

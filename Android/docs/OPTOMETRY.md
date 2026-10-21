@@ -33,7 +33,13 @@ under the centre box only shows the current size ("20/40") and the controls.
   sends, from 20/20 up to 20/200. It opens at **20/40**.
 - **Click** anywhere swaps black-on-white for white-on-black (bright text on a dark field
   blurs differently, and is closer to what the glasses usually show).
-- **Right-click** anywhere closes it. Reopening starts at 20/40, black on white.
+- **Long-press** anywhere (the phone touchpad's hold, or holding a mouse/touchpad click)
+  opens a small menu at the cursor: the current size, **Larger text**, **Smaller text**,
+  **Invert colours** and **Close eye chart**. The cursor shows while the menu is up; size
+  and invert keep it open for repeated clicks, a click outside dismisses it. This is the
+  way out on the phone touchpad, which has no right-click.
+- **Right-click** (a mouse's right button) closes the chart directly, or the menu if
+  it's open. Reopening starts at 20/40, black on white.
 
 The user scrolls to the smallest size they can still read, then turns the focus wheel
 until it is sharp. Text instead of isolated letters makes blur obvious across the whole
@@ -65,8 +71,11 @@ a display-mode change only testable on hardware. Until then the user covers one 
   render band to the full surface, using the HUD quad; the cursor isn't drawn while
   it's up.
 - `WorkspaceController.setOptometryOpen(open)` holds the state (opening it closes any
-  panel). While it's up the renderer sends scrolls to the overlay, inverts it on a
-  click, closes it on a right-click, and ignores drags, long-presses and pinch.
+  panel). While it's up the renderer sends scrolls to the overlay, opens its menu on
+  a long-press (`EyeChartOverlay.openMenu`, at the cursor converted from the render
+  band to surface pixels), routes clicks to the menu while it's open and otherwise
+  inverts, closes on a right-click, and ignores drags and pinch. The page bitmap is
+  cached so the menu is drawn over a copy without re-laying the text.
 - `BuiltInApps.launch(EYE_CHART, …)` opens it from the drawer.
 
 ## Sources
