@@ -99,8 +99,13 @@ mode works the way it does with real tracking. The pad starts in FREE mode, faci
   mouse:
 
   ```bash
-  emulator -avd UxSpace_Sim -port 5580 -feature VirtioMouse,-VirtioTablet
+  emulator -avd UxSpace_Sim -port 5580 -feature VirtioMouse,-VirtioTablet -no-snapshot-load
   ```
+
+  Cold-boot (`-no-snapshot-load`): when the emulator restores its quick-boot snapshot,
+  the workspace display can come back as a frozen frame. Wireless debugging is off again
+  too, so the helper reports `NEEDS_WIRELESS_DEBUGGING`. If that happens, run
+  `uxsim.py pair` and restart UxSpace.
 
   The guest then has a "QEMU Virtio Mouse" (REL_X/REL_Y). The privileged helper
   classes it MOUSE and EVIOCGRABs it, exactly like a BT mouse on the phone. Click
