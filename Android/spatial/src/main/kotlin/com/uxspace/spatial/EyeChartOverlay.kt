@@ -18,7 +18,8 @@ import kotlin.math.roundToInt
  * The eye chart (docs/OPTOMETRY.md): a head-locked page of black-on-white text that
  * fills the whole glasses view, regardless of zoom, view mode or screen layout. The
  * user rolls the wheel to change the text size and turns the focus wheels until the
- * smallest size they can read is sharp; a click closes it.
+ * smallest size they can read is sharp. A click swaps black-on-white for white-on-black
+ * (dark text on a bright field and the reverse blur differently); a right-click closes it.
  *
  * Text size is a real visual angle, sized the way reading charts (MNREAD, "M" print
  * sizes) size running text: the lowercase x-height is 5 arcmin × 10^[logMar] at the
@@ -36,30 +37,48 @@ internal class EyeChartOverlay(
     /** Current size as logMAR: 0 = 20/20, 0.3 ≈ 20/40, 1 = 20/200. */
     private var logMar = START_LOG_MAR
 
-    /** Wheel travel not yet turned into a [STEP_LOG_MAR] step. */
-    private var scrollAccumulator = 0f
+    /** Uptime of the last size step, for the [STEP_COOLDOWN_MS] rate limit. */
+    private var lastStepMs = 0L
 
     private var textureId = 0
     private var textureW = 0
     private var textureH = 0
     private var textureLogMar = Float.NaN
 
-    /** Wheel / two-finger scroll: up makes the text bigger, down smaller. */
+    /** White text on black instead of black on white. */
+    private var inverted = false
+    private var textureInverted = false
+
+    /**
+     * Wheel / two-finger scroll: up makes the text bigger, down smaller — one
+     * [STEP_LOG_MAR] step per scroll, at most every [STEP_COOLDOWN_MS]. Counting
+     * magnitude instead ran away: mice and the emulator send several ticks per notch,
+     * and a touchpad swipe is a stream of events.
+     */
     fun scroll(dyFraction: Float) {
-        scrollAccumulator += dyFraction
-        val steps = (scrollAccumulator / SCROLL_PER_STEP).toInt()
-        if (steps == 0) return
-        scrollAccumulator -= steps * SCROLL_PER_STEP
-        logMar = (logMar + steps * STEP_LOG_MAR).coerceIn(MIN_LOG_MAR, MAX_LOG_MAR)
+        if (dyFraction == 0f) return
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastStepMs < STEP_COOLDOWN_MS) return
+        lastStepMs = now
+        val step = if (dyFraction > 0f) STEP_LOG_MAR else -STEP_LOG_MAR
+        logMar = (logMar + step).coerceIn(MIN_LOG_MAR, MAX_LOG_MAR)
+    }
+
+    /** Swap black-on-white ↔ white-on-black. */
+    fun toggleInverted() {
+        inverted = !inverted
     }
 
     /** Draw the page over the whole [width] × [height] surface. Leaves the viewport set to it. */
     fun draw(width: Int, height: Int) {
-        if (textureId == 0 || width != textureW || height != textureH || logMar != textureLogMar) {
+        if (textureId == 0 || width != textureW || height != textureH ||
+            logMar != textureLogMar || inverted != textureInverted
+        ) {
             upload(render(width, height))
             textureW = width
             textureH = height
             textureLogMar = logMar
+            textureInverted = inverted
         }
         GLES20.glViewport(0, 0, width, height)
         drawFullscreen(textureId)
@@ -70,15 +89,15 @@ internal class EyeChartOverlay(
         if (textureId == 0) return
         GLES20.glDeleteTextures(1, intArrayOf(textureId), 0)
         textureId = 0
-        // Reopening starts from the default size, like a fresh chart.
+        // Reopening starts fresh: default size, black on white.
         logMar = START_LOG_MAR
-        scrollAccumulator = 0f
+        inverted = false
     }
 
     private fun render(width: Int, height: Int): Bitmap {
         val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
-        canvas.drawColor(Color.WHITE)
+        canvas.drawColor(if (inverted) Color.BLACK else Color.WHITE)
 
         val footerH = (height * FOOTER_FRACTION).roundToInt()
         val margin = (width * MARGIN_FRACTION).roundToInt()
@@ -86,7 +105,7 @@ internal class EyeChartOverlay(
         // Body: lorem ipsum filling everything above the footer.
         val xHeightPx = PX_PER_DEGREE * (5f / 60f) * 10f.pow(logMar)
         val body = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = INK
+            color = if (inverted) Color.WHITE else Color.BLACK
             typeface = Typeface.create("sans-serif", Typeface.NORMAL)
             textSize = 100f
             val bounds = Rect()
@@ -127,7 +146,8 @@ internal class EyeChartOverlay(
         val acuity = "20/${snellenDenominator()}"
         canvas.drawText(acuity, margin.toFloat(), baseline, label)
         canvas.drawText(
-            "Scroll to change the text size, turn the focus wheel until it's sharp. Click to close.",
+            "Scroll to change the size and turn the focus wheel until it's sharp. " +
+                "Click to invert colours, right-click to close.",
             margin + label.measureText(acuity) + footerH * 0.6f,
             baseline,
             hint,
@@ -174,15 +194,16 @@ internal class EyeChartOverlay(
         /** 20/200. */
         const val MAX_LOG_MAR = 1f
 
-        /** One wheel notch (0.08 scroll) = half a chart line. */
+        /** One scroll step = half a chart line. */
         const val STEP_LOG_MAR = 0.05f
-        const val SCROLL_PER_STEP = 0.08f
+
+        /** Minimum time between steps, so one notch or flick moves one step. */
+        const val STEP_COOLDOWN_MS = 150L
 
         const val LINE_SPACING = 1.35f
         const val MARGIN_FRACTION = 0.04f
         const val FOOTER_FRACTION = 0.06f
 
-        const val INK = 0xFF000000.toInt()
         const val FOOTER_BG = 0xFF1B1A1D.toInt()
         const val FOOTER_HINT = 0xFFB4B2B8.toInt()
 

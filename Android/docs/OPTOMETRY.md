@@ -25,9 +25,12 @@ over everything, regardless of zoom, FREE/pinned mode or the screen layout. The 
 black lorem-ipsum text on white, filling the view, with a footer showing the current
 size ("20/40") and how to drive it.
 
-- **Wheel / two-finger scroll** changes the text size, 0.05 logMAR per wheel notch
-  (half a chart line), from 20/20 up to 20/200. It opens at **20/40**.
-- **Click** (or right-click) anywhere closes it. Reopening starts at 20/40 again.
+- **Wheel / two-finger scroll** changes the text size by 0.05 logMAR (half a chart
+  line) per step, at most one step every 150 ms however many ticks a notch sends,
+  from 20/20 up to 20/200. It opens at **20/40**.
+- **Click** anywhere swaps black-on-white for white-on-black (bright text on a dark field
+  blurs differently, and is closer to what the glasses usually show).
+- **Right-click** anywhere closes it. Reopening starts at 20/40, black on white.
 
 The user scrolls to the smallest size they can still read, then turns the focus wheel
 until it is sharp. Text instead of isolated letters makes blur obvious across the whole
@@ -53,13 +56,14 @@ a display-mode change only testable on hardware. Until then the user covers one 
 ## Implementation
 
 - `EyeChartOverlay` (spatial module) renders the page into a bitmap at the surface's
-  size and keeps it as a GL texture, rebuilt only when the size or surface changes.
+  size and keeps it as a GL texture, rebuilt only when the text size, colours or
+  surface change.
 - `WorkspaceRenderer` draws it last in the frame, with the viewport widened from the
   render band to the full surface, using the HUD quad; the cursor isn't drawn while
   it's up.
 - `WorkspaceController.setOptometryOpen(open)` holds the state (opening it closes any
-  panel). While it's up the renderer sends scrolls to the overlay, closes it on a click
-  or right-click, and ignores drags, long-presses and pinch.
+  panel). While it's up the renderer sends scrolls to the overlay, inverts it on a
+  click, closes it on a right-click, and ignores drags, long-presses and pinch.
 - `BuiltInApps.launch(EYE_CHART, …)` opens it from the drawer.
 
 ## Sources

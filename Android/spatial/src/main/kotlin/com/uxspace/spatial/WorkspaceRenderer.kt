@@ -1159,7 +1159,7 @@ class WorkspaceRenderer(
         if (WorkspaceController.legendVisible) drawLegend()
         drawLayoutAnnouncement()
         if (WorkspaceController.isOptometryOpen) {
-            // Head-locked over everything; no cursor, since a click anywhere closes it.
+            // Head-locked over everything; no cursor, since a click anywhere acts on it.
             eyeChart.draw(surfaceWidth, surfaceHeight)
             applyBand()
         } else {
@@ -2650,9 +2650,10 @@ class WorkspaceRenderer(
     }
 
     private fun handleClick() {
-        // The eye chart covers the whole view; a click anywhere closes it.
+        // The eye chart covers the whole view; a click anywhere swaps its colours
+        // (right-click closes it, see handleRightClick).
         if (WorkspaceController.isOptometryOpen) {
-            mainHandler.post { WorkspaceController.setOptometryOpen(false) }
+            eyeChart.toggleInverted()
             return
         }
         // A click while a drag is in flight resolves the drag instead of routing
